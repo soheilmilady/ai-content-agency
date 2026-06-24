@@ -21,30 +21,31 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card className="glass-panel">
+        {/* جایگزینی glass-panel با bg-card و border-border */}
+        <Card className="border border-border bg-card text-card-foreground shadow-sm transition-all hover:shadow-md">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <FilePlus2 className="h-5 w-5 text-indigo-600" />
+            <CardTitle className="flex items-center gap-2 text-lg text-foreground">
+              <FilePlus2 className="h-5 w-5 text-primary" />
               تولید مقاله
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-muted-foreground">
               مقاله سئو محور جدید با هوش مصنوعی بسازید.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button asChild className="bg-indigo-600 hover:bg-indigo-500">
+            <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
               <Link href="/dashboard/articles/new">شروع تولید محتوا</Link>
             </Button>
           </CardContent>
         </Card>
 
-        <Card className="glass-panel">
+        <Card className="border border-border bg-card text-card-foreground shadow-sm transition-all hover:shadow-md">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <UserCircle className="h-5 w-5 text-indigo-600" />
+            <CardTitle className="flex items-center gap-2 text-lg text-foreground">
+              <UserCircle className="h-5 w-5 text-primary" />
               حساب کاربری
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-muted-foreground">
               تغییر ایمیل، نام کاربری و رمز عبور.
             </CardDescription>
           </CardHeader>
@@ -55,13 +56,13 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="glass-panel">
+        <Card className="border border-border bg-card text-card-foreground shadow-sm transition-all hover:shadow-md">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Users className="h-5 w-5 text-indigo-600" />
+            <CardTitle className="flex items-center gap-2 text-lg text-foreground">
+              <Users className="h-5 w-5 text-primary" />
               مدیریت کاربران
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-muted-foreground">
               افزودن، ویرایش و حذف کاربران (فقط admin).
             </CardDescription>
           </CardHeader>

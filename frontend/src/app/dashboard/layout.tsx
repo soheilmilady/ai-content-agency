@@ -57,7 +57,7 @@ export default function DashboardLayout({
     return (
       <div
         dir="rtl"
-        className="flex min-h-screen items-center justify-center bg-background"
+        className="flex min-h-screen items-center justify-center bg-background text-foreground"
       >
         <p className="text-muted-foreground">در حال بارگذاری...</p>
       </div>
@@ -73,9 +73,10 @@ export default function DashboardLayout({
 
   return (
     <div dir="rtl" className="flex min-h-screen bg-background text-foreground">
-      <aside className="glass-panel fixed inset-y-0 right-0 z-30 flex w-64 flex-col">
+      {/* سایدبار: استفاده از bg-card و border-border برای تطبیق ۱۰۰٪ با حالت شب */}
+      <aside className="fixed inset-y-0 right-0 z-30 flex w-64 flex-col border-l border-border bg-card text-card-foreground shadow-sm">
         <div className="border-b border-border px-6 py-5">
-          <h1 className="text-lg font-bold">پلتفرم محتوای هوشمند</h1>
+          <h1 className="text-lg font-bold text-foreground">پلتفرم محتوای هوشمند</h1>
           <p className="mt-1 text-xs text-muted-foreground">پنل مدیریت</p>
         </div>
 
@@ -89,7 +90,7 @@ export default function DashboardLayout({
                 href={href}
                 className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                   active
-                    ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200"
+                    ? "bg-primary text-primary-foreground shadow"
                     : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                 }`}
               >
@@ -102,10 +103,11 @@ export default function DashboardLayout({
       </aside>
 
       <div className="mr-64 flex min-h-screen flex-1 flex-col">
-        <header className="glass-panel sticky top-0 z-20 flex items-center justify-between px-6 py-4">
+        {/* هدر: استفاده از bg-background/95 همراه با جلوهٔ شیشه‌ایِ بومیِ Tailwind */}
+        <header className="sticky top-0 z-20 flex items-center justify-between border-b border-border bg-background/95 backdrop-blur px-6 py-4 text-foreground shadow-sm">
           <div>
             <p className="text-sm text-muted-foreground">خوش آمدید</p>
-            <p className="font-semibold">{user?.username || user?.email}</p>
+            <p className="font-semibold text-foreground">{user?.username || user?.email}</p>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
