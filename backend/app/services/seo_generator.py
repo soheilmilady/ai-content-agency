@@ -8,10 +8,6 @@ from app.services.llm_gateway import LLMGateway
 
 
 def get_system_anchor(domain_context: str) -> str:
-    """
-    لنگرِ هویتِ دانشنامه‌ای:
-    هوش مصنوعی را ملزم به 'راستی‌آزماییِ فکت‌ها' و 'پرهیز از تکرارِ ساختاری' می‌کند.
-    """
     return f"""تو یک پژوهشگرِ برجسته‌ی تاریخ، مستندنگارِ علمی و سردبیرِ تراز اولِ وبِ فارسی در حوزه‌ی «{domain_context}» هستی.
 معماریِ کلامِ تو مبتنی بر «اصالتِ فکت‌ها، نثرِ معیارِ دانشگاهی، و پیوستگیِ بدونِ حشو» است.
 
@@ -23,22 +19,15 @@ def get_system_anchor(domain_context: str) -> str:
 
 
 def pure_tree_walker_sanitizer(raw_html_output: str) -> str:
-    """
-    هرس‌کننده‌ی ایمنِ درختِ HTML:
-    تگ‌های تفکرِ LLM را پاک می‌کند اما مطلقاً به کلمات، حروف و گرامرِ داخلِ متن دست نمی‌زند
-    تا پدیده‌ی 'کلماتِ بخار شده' کاملاً ریشه‌کن شود.
-    """
     if not raw_html_output:
         return ""
 
-    # هرس کردنِ پوسته‌ی تفکرِ لاما در صورتِ نشت به خروجی
     cleaned = re.sub(
         r"<think>.*?</think>", "", raw_html_output, flags=re.DOTALL | re.IGNORECASE
     )
-    cleaned = re.sub(r"```html|
-```", "", cleaned, flags=re.IGNORECASE)
+    # <--- جادوی فرار از مفسرِ کپی: استفاده از کد هگزادسیمال \x60 به جای ۳ تا بک‌تیک!
+    cleaned = re.sub(r"\x60{3}html|\x60{3}", "", cleaned, flags=re.IGNORECASE)
 
-    # پاک‌سازیِ کلماتِ توقفِ (Stop-words) کلیشه‌ایِ رباتیک
     cliches = [
         r"\bدر نتیجه،\b",
         r"\bبه طور کلی،\b",
@@ -79,11 +68,6 @@ def pure_tree_walker_sanitizer(raw_html_output: str) -> str:
 
 
 def extract_safe_context(raw_html_history: str) -> str:
-    """
-    خلاصه‌سازِ ایمنِ کانتکست:
-    به جای ارسالِ کلِ متنِ قبلی، صرفاً یک گزارشِ یک‌خطی از تیترهای نگارش‌یافته می‌سازد
-    تا نویسنده دچارِ 'سندرومِ تکرارِ طوطی‌وار' نشود.
-    """
     if not raw_html_history or not raw_html_history.strip():
         return "بدنه‌ی مقاله هنوز آغاز نشده است."
 
