@@ -90,15 +90,16 @@ async def _generate_article(
 
     for section in sections:
         h2_title = section.get("h2", "")
-        # پل‌زدنِ ایمن بین دو نسلِ اسیکما
         core_thesis = section.get("core_thesis", "")
         if not core_thesis:
-            core_thesis = section.get("content_angle", "بسط و تحلیلِ ژورنالیستیِ این تیتر")
+            core_thesis = section.get(
+                "content_angle", "بسط و تحلیلِ ژورنالیستیِ این تیتر"
+            )
 
         h3_list = section.get("h3_list", [])
 
-        # ترمز دستی برای خنک شدنِ فیوزِ Groq
-        await asyncio.sleep(3.5)
+        # ترمز دستیِ کش‌آمده برای شارژِ باکِ Groq
+        await asyncio.sleep(8.5)
 
         html = await generator.draft_section(
             h2_title=h2_title,
@@ -166,10 +167,17 @@ def _build_stream_generator(
             generator = SEOGenerator(llm)
             critic = SEOCritic(llm)
 
-            yield _sse_event({"step": "researching", "message": "در حال تحقیق زنده در وب..."})
+            yield _sse_event(
+                {"step": "researching", "message": "در حال تحقیق زنده در وب..."}
+            )
             research_data = await researcher.research(topic)
 
-            yield _sse_event({"step": "outlining", "message": "در حال معماریِ واژه‌نامه و ساختار..."})
+            yield _sse_event(
+                {
+                    "step": "outlining",
+                    "message": "در حال معماریِ واژه‌نامه و ساختار...",
+                }
+            )
             outline = await generator.generate_outline(topic, keyword, research_data)
 
             lsi_keywords = outline.get("lsi_keywords", [])
@@ -189,12 +197,14 @@ def _build_stream_generator(
                     }
                 )
 
-                # ترمزِ ۳.۵ ثانیه‌ایِ استریم برای عبور از سقفِ Groq
-                await asyncio.sleep(3.5)
+                # <--- ترمزِ ۸.۵ ثانیه‌ایِ استریم برای عبورِ امن از لبه‌ی ۶۰۰۰ توکنی
+                await asyncio.sleep(8.5)
 
                 core_thesis = section.get("core_thesis", "")
                 if not core_thesis:
-                    core_thesis = section.get("content_angle", "تحلیل و بسطِ این تیتر")
+                    core_thesis = section.get(
+                        "content_angle", "تحلیل و بسطِ این تیتر"
+                    )
 
                 html = await generator.draft_section(
                     h2_title=h2_title,
@@ -210,8 +220,12 @@ def _build_stream_generator(
 
             full_content = _assemble_content(outline, sections_html)
 
-            yield _sse_event({"step": "auditing", "message": "در حال ممیزی و خود-اصلاحی سئو..."})
-            full_content, score = await _audit_and_improve(critic, full_content, keyword)
+            yield _sse_event(
+                {"step": "auditing", "message": "در حال ممیزی و خود-اصلاحی سئو..."}
+            )
+            full_content, score = await _audit_and_improve(
+                critic, full_content, keyword
+            )
 
             chunk_size = 20
             for i in range(0, len(full_content), chunk_size):
