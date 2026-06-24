@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 from collections.abc import AsyncGenerator
@@ -71,7 +72,6 @@ async def _generate_article(
     keyword: str,
     llm_model: str | None = None,
 ) -> tuple[dict, str, int]:
-    # استفاده از مدل Groq به عنوان پیش‌فرض در صورت عدم ارسال از کلاینت
     target_model = llm_model or "groq/llama-3.3-70b-versatile"
     llm = LLMGateway(model=target_model)
     researcher = WebResearcher()
@@ -92,6 +92,9 @@ async def _generate_article(
         content_angle = section.get("content_angle", "")
         h3_list = section.get("h3_list", [])
         key_points = section.get("key_points", [])
+
+        # ترمز دستی برای روتِ تولیدِ یک‌باره
+        await asyncio.sleep(3.5)
 
         html = await generator.draft_section(
             h2_title=h2_title,
@@ -144,7 +147,6 @@ def _build_stream_generator(
 ):
     async def event_stream() -> AsyncGenerator[str, None]:
         try:
-            # بازگشتِ شکوهمندانهٔ چکِ کلید Groq
             if not getattr(settings, "GROQ_API_KEY", None):
                 yield _sse_event(
                     {
@@ -181,6 +183,9 @@ def _build_stream_generator(
                         "message": f"در حال نگارش بخش {index} از {total}: «{h2_title}»...",
                     }
                 )
+
+                # <--- جادوی کنترل ترافیکِ Groq: ترمزِ ۳.۵ ثانیه‌ایِ استریم
+                await asyncio.sleep(3.5)
 
                 html = await generator.draft_section(
                     h2_title=h2_title,
