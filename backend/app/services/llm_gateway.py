@@ -60,8 +60,9 @@ class LLMGateway:
             "messages": messages,
             "api_key": settings.GROQ_API_KEY,
             "stream": stream,
-            "temperature": 0.7,
-            "max_tokens": 4000,  # <--- گیوتین برداشته شد: اجازه تولید تا ۴۰۰۰ توکن!
+            # <--- جادوی کنترلِ تخیل: دما از ۰.۷ به ۰.۲۵ کاهش یافت تا استعاره‌های فضایی نپراند!
+            "temperature": 0.25,
+            "max_tokens": 4000,
         }
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
