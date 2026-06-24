@@ -1,6 +1,13 @@
 from app.services.json_utils import parse_json_response
 from app.services.llm_gateway import LLMGateway
 
+PERSIAN_SYSTEM = (
+    "تمام خروجی را فقط و فقط به زبان فارسی روان و رسمی بنویس. "
+    "از هیچ کلمه‌ای به زبان ترکی، عربی، فرانسوی یا هر زبان دیگری استفاده نکن. "
+    "اصطلاحات فنی رایج مانند کلدبرو، اسپرسو، فرنچ‌پرس قابل قبول هستند. "
+    "هرگز کلمات غیرفارسی مانند ayrıca، también، aussi را به کار نبر."
+)
+
 
 class SEOGenerator:
     def __init__(self, llm: LLMGateway | None = None) -> None:
@@ -14,27 +21,36 @@ class SEOGenerator:
             {
                 "role": "system",
                 "content": (
-                    "You are an SEO expert writing Persian content. "
-                    "Return ONLY valid JSON with double-quoted keys and strings."
+                    PERSIAN_SYSTEM + " "
+                    "تو یک متخصص سئو هستی. "
+                    "فقط JSON معتبر با کلیدها و مقادیر داخل double quote برگردان. "
+                    "هیچ توضیح، مقدمه یا متن اضافه خارج از JSON ننویس."
                 ),
             },
             {
                 "role": "user",
                 "content": (
-                    f"Topic: {topic}\n"
-                    f"Focus keyword: {keyword}\n"
-                    f"Competitor headings: {headings}\n"
-                    "Build JSON with this exact structure:\n"
+                    f"موضوع: {topic}\n"
+                    f"کلمه کلیدی اصلی: {keyword}\n"
+                    f"تیترهای رقبا برای الهام (نه کپی): {headings}\n\n"
+                    "یک ساختار مقاله کامل با این فرمت JSON دقیق بساز:\n"
                     "{\n"
-                    '  "h1": "main title including keyword",\n'
-                    '  "meta_description": "150-160 chars meta",\n'
+                    '  "h1": "عنوان اصلی که حتماً شامل کلمه کلیدی باشد",\n'
+                    '  "meta_description": "توضیح جذاب ۱۵۰ تا ۱۶۰ کاراکتر فارسی",\n'
                     '  "sections": [\n'
-                    '    {"h2": "section title", "h3_list": ["sub 1", "sub 2"], '
-                    '"key_points": ["point 1"]}\n'
+                    '    {\n'
+                    '      "h2": "عنوان بخش اصلی (منحصربه‌فرد و متفاوت از H3)",\n'
+                    '      "h3_list": ["زیرعنوان متفاوت ۱", "زیرعنوان متفاوت ۲"],\n'
+                    '      "key_points": ["نکته مهم ۱", "نکته مهم ۲", "نکته مهم ۳"]\n'
+                    '    }\n'
                     "  ],\n"
-                    '  "lsi_keywords": ["related 1", "related 2"]\n'
-                    "}\n"
-                    "Use Persian text inside values. Minimum 5 H2 sections."
+                    '  "lsi_keywords": ["کلمه مرتبط ۱", "کلمه مرتبط ۲", "کلمه مرتبط ۳"]\n'
+                    "}\n\n"
+                    "قوانین مهم:\n"
+                    "- حداقل ۵ بخش H2 بساز\n"
+                    "- عنوان H2 و H3 های هر بخش باید کاملاً متفاوت از هم باشند\n"
+                    "- هیچ دو بخشی عنوان یکسان نداشته باشند\n"
+                    "- همه متون داخل JSON فارسی باشند"
                 ),
             },
         ]
@@ -52,20 +68,27 @@ class SEOGenerator:
             {
                 "role": "system",
                 "content": (
+                    PERSIAN_SYSTEM + " "
                     "تو یک نویسنده محتوای حرفه‌ای فارسی هستی. "
-                    "متن روان، طبیعی و بدون ترجمه مستقیم بنویس."
+                    "متن روان، طبیعی و کاملاً اصیل بنویس. "
+                    "هرگز عنوان H2 را داخل متن تکرار نکن."
                 ),
             },
             {
                 "role": "user",
                 "content": (
-                    f"برای بخش '{h2_title}' یک پاراگراف ۱۵۰ تا ۲۵۰ کلمه‌ای بنویس.\n"
-                    f"نکات مهم: {key_points}\n"
-                    f"کلمه کلیدی اصلی را یک بار در این بخش استفاده کن: {keyword}\n"
-                    f"کلمات مرتبط را طبیعی استفاده کن: {lsi_keywords}\n"
-                    "جملات زیر ۲۵ کلمه باشند.\n"
-                    "پاراگراف‌ها زیر ۳ خط باشند.\n"
-                    "فقط متن HTML بدون تگ‌های اضافه برگردان (از h3 و p استفاده کن)."
+                    f"برای بخش با عنوان «{h2_title}» متن کامل بنویس.\n\n"
+                    f"نکات محتوایی که باید پوشش داده شوند: {key_points}\n"
+                    f"کلمه کلیدی اصلی (یک بار به طور طبیعی استفاده کن): {keyword}\n"
+                    f"کلمات مرتبط (طبیعی و پراکنده استفاده کن): {lsi_keywords}\n\n"
+                    "قوانین نگارش:\n"
+                    "- طول کل متن: ۱۵۰ تا ۲۵۰ کلمه فارسی\n"
+                    "- هر جمله زیر ۲۵ کلمه باشد\n"
+                    "- هر پاراگراف حداکثر ۳ خط باشد\n"
+                    "- عنوان بخش را در ابتدا تکرار نکن\n"
+                    "- فقط تگ‌های <h3> و <p> استفاده کن\n"
+                    "- هیچ کلمه غیرفارسی (به جز اصطلاحات فنی) ننویس\n\n"
+                    "فقط HTML خروجی بده، بدون توضیح اضافه."
                 ),
             },
         ]
