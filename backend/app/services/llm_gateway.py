@@ -45,7 +45,6 @@ def _friendly_llm_error(model: str, exc: Exception) -> ValueError:
 class LLMGateway:
     def __init__(self, model: str | None = None) -> None:
         self.model = model or settings.DEFAULT_LLM_MODEL
-        # مدل ضدگلولهٔ ثانویه برای مواقعی که باکِ توکنِ مدل اصلی در سرور پر می‌شود
         self.fallback_model = "groq/llama-3.1-8b-instant"
 
     def _resolve_model(self, target_model: str) -> str:
@@ -62,6 +61,7 @@ class LLMGateway:
             "api_key": settings.GROQ_API_KEY,
             "stream": stream,
             "temperature": 0.7,
+            "max_tokens": 4000,  # <--- گیوتین برداشته شد: اجازه تولید تا ۴۰۰۰ توکن!
         }
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
@@ -87,9 +87,7 @@ class LLMGateway:
 
         for attempt in range(max_attempts + 1):
             try:
-                # تاخیر ۱.۲ ثانیه‌ایِ ذاتی برای جلوگیری از رگبار شدن ریکوئست‌ها
                 await asyncio.sleep(1.2)
-
                 response = await litellm.acompletion(
                     **self._completion_kwargs(active_model, messages, False, json_mode)
                 )
@@ -110,7 +108,6 @@ class LLMGateway:
 
                 if is_rate_limit:
                     if attempt == max_attempts:
-                        # وقتی تمام شانس‌ها سوخت، پشت صحنه سوئیچ می‌کنیم روی زاپاسِ سبک‌تر!
                         if active_model != self.fallback_model:
                             active_model = self.fallback_model
                             await asyncio.sleep(4.0)
@@ -120,13 +117,14 @@ class LLMGateway:
                                         active_model, messages, False, json_mode
                                     )
                                 )
-                                return str(fallback_res.choices[0].message.content or "")
+                                return str(
+                                    fallback_res.choices[0].message.content or ""
+                                )
                             except Exception as fallback_exc:
                                 raise _friendly_llm_error(
                                     active_model, fallback_exc
                                 ) from fallback_exc
 
-                    # فرمول تاخیر تصاعدی (Exponential Backoff)
                     await asyncio.sleep((attempt + 1) * 2.5)
                     continue
 
@@ -140,7 +138,6 @@ class LLMGateway:
         active_model = self.model
         response = None
 
-        # تلاش برای باز کردنِ لولهٔ استریم با قابلیت سوئیچ به زاپاس در صورت ترافیک
         for attempt in range(2):
             try:
                 await asyncio.sleep(1.0)
@@ -174,5 +171,4 @@ class LLMGateway:
                 if delta:
                     yield delta
         except Exception:
-            # عبورِ نرم از خطاهای احتمالیِ وسطِ استریم برای حفظِ متونِ تایپ شده تا آن لحظه
             pass
