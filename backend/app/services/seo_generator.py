@@ -7,41 +7,46 @@ from app.services.json_utils import parse_json_response
 from app.services.llm_gateway import LLMGateway
 
 
-def get_dynamic_anchor(domain_topic: str) -> str:
+def get_system_anchor(domain_context: str) -> str:
     """
-    لنگرِ هویتِ موضوع‌ـ‌ناپذیر (Domain-Agnostic Persona):
-    هویتِ نویسنده را درجا با کلمهٔ ورودیِ کاربر قفل می‌کند
-    و یک سرمشقِ ریتمیکِ کاملاً جدی و تجاری به او می‌دهد.
+    لنگرِ هویتِ ژورنالیسمِ ساختاریافته:
+    به جای قوانینِ سلبیِ وصله‌پینه‌ای، اصولِ «تفکرِ علمی و لحنِ محتاط» را به مدل تزریق می‌کند.
     """
-    return f"""تو یک استراتژیستِ محتوا، سردبیرِ ارشد و نویسنده‌ی تراز اولِ وبِ فارسی در حوزه‌ی تخصصیِ «{domain_topic}» هستی.
+    return f"""تو یک استراتژیستِ محتوا، پژوهشگرِ ارشد و نویسنده‌ی تراز اولِ وبِ فارسی در حوزه‌ی «{domain_context}» هستی.
+معماریِ کلامِ تو مبتنی بر «دقتِ مستند، انسجامِ روایی، و اعتدال در بیان» است.
 
-ماموریتِ تو: نگارشِ متنی با استانداردِ «نثرِ معیارِ ژورنالیسمِ تجاری و صنعتی».
-
-[سرمشقِ هندسه‌ی کلماتِ تو — موضوع مقاله هرچه که باشد، لحنت باید از این پختگی پیروی کند]:
-«هر محصولِ پیشرو، حاصلِ پاسخ به یک نیازِ اصیلِ بازار یا یک چالشِ فنی است. وقتی از یک استانداردِ تراز اول سخن می‌گوییم، منظورمان انباشتِ تصادفیِ صفاتِ خوب نیست؛ بلکه تعادلِ پایداری است که در آن، کارایی، مقاومت و منطقِ اقتصادی در یک نقطه‌ی طلایی به صلح می‌رسند.»
-
-قوانینِ تخطی‌ناپذیرِ تو در حوزه‌ی «{domain_topic}»:
-۱. تطبیقِ اتمسفر: اگر موضوع صنعتی (مثل لوله یا ماشین‌آلات) است، از واژگانِ محکم، مهندسی و B2B استفاده کن؛ اگر سبک زندگی یا خوراکی است، توصیفی و جذاب باش.
-۲. ممنوعیتِ توهماتِ بین‌صنفی: اصطلاحاتِ یک صنف را به صنفِ دیگر نچسبان! (مثلاً کلمه‌ی «آلیاژ» منحصراً متعلق به فلزات است، «دم‌آوری» متعلق به چای و قهوه، «دوز» متعلق به دارو). بکارگیریِ کلماتی مثل «شیر و شکر» در مقاله‌ی لوله‌ی صنعتی، جریمه‌ی فاجعه‌بار دارد!
-۳. زبانِ خالص: کلِ متن باید به زبان فارسیِ روان، طبیعی و زنده باشد. بکارگیریِ کلماتِ انگلیسی (مثل therefore, stands, leading, rapidly)، آلمانی یا کلماتِ عجیبِ آسیای شرقی (مثل rõ یا d dàng) مطلقاً ممنوع است.
-۴. پرهیز از تکرارِ بدیهیات: هرگز تیتر را با خودش تعریف نکن."""
+قوانینِ بنیادینِ پردازشِ ذهنیِ تو:
+۱. اصلِ عدمِ مبالغه (Understatement over Hyperbole): هرگز از احکامِ مطلق، غیرعلمی و مبالغه‌آمیز (مانند: 'صد در صد'، 'کنترل مطلق'، 'بی‌رقیب‌ترین') استفاده نکن. اعتبارِ یک متنِ علمی به «احتیاط در صدورِ گزاره‌ها» است؛ حقایق را معتدل و دقیق بیان کن.
+۲. پیوستگیِ ارگانیک (Narrative Flow): داده‌ها باید در تار و پودِ جملاتِ مرکب و متین بافته شوند؛ ردیف کردنِ اطلاعات به صورتِ بولت‌پوینت یا تلگرافی، ممنوع است.
+۳. اصالتِ واژگانی: در برگردانِ مفاهیم، از اصیل‌ترین و رایج‌ترین واژگانِ زبانِ مقصد در همان صنف استفاده کن؛ بکارگیریِ کلماتِ فینگلیش یا ترجمه‌های تحت‌اللفظی، خطای سیستماتیک است.
+۴. ممنوعیتِ تعاریفِ حلقوی: هرگز یک پدیده را با تکرارِ کلماتِ اسمِ خودش تعریف نکن."""
 
 
-def gentle_html_sanitizer(raw_html: str) -> str:
+# فیلترِ سخت‌افزاریِ کاراکترها (Inference Artifacts Filter)
+# این رجکس صرفاً برای مهارِ نشتِ توکنایزرِ مدل‌های ترانسفورمر در سطح بایت است، نه یک قانونِ پرامپتی.
+_ALIEN_BYTE_FILTER = re.compile(
+    r"[\u0900-\u097F"  # هندی / سانسکریت
+    r"\u4E00-\u9FFF\u3040-\u30FF\u31F0-\u31FF"  # کانجی / چینی / ژاپنی
+    r"\u0E00-\u0E7F"  # تایلندی
+    r"\u0400-\u04FF\u0500-\u052F"  # سیریلیک (روسی) -> مهارِ کلمه‌ی هیبریدیِ «استабل»
+    r"ạảăắằẳẵặâấầẩẫậẹẻẽêềếểễệỉịọỏôốồổỗộơớờởỡợụủưứừửữựỵỷỹĐđ"  # ویتنامی
+    r"]+"
+)
+
+
+def pure_html_sanitizer(raw_content: str) -> str:
     """
-    پاک‌کنندهٔ ملایم و هوشمند:
-    به حروفِ کلماتِ فارسی و تخصصی دست نمی‌زند؛ فقط تگ‌های نامعتبر را باز می‌کند
-    و کلماتِ توقفِ (Stop-words) لاتینِ رایج را از بافتِ متن بیرون می‌کشد.
+    هرس‌کننده‌ی خالصِ درختِ HTML (بدون هیچ‌گونه دخالت در منطقِ کلمات و لغت‌نامه‌ها).
     """
-    if not raw_html:
+    if not raw_content:
         return ""
 
-    # پاک کردن تگ‌های تفکرِ لاما در صورت وجود
-    text = re.sub(r"<think>.*?</think>", "", raw_html, flags=re.DOTALL)
+    text = re.sub(r"<think>.*?</think>", "", raw_content, flags=re.DOTALL)
     text = re.sub(r"```html|```", "", text)
+    text = _ALIEN_BYTE_FILTER.sub("", text)
 
     soup = BeautifulSoup(text, "html.parser")
-    whitelist = {
+    valid_tags = {
         "p",
         "h2",
         "h3",
@@ -57,44 +62,22 @@ def gentle_html_sanitizer(raw_html: str) -> str:
     }
 
     for tag in soup.find_all(True):
-        if tag.name not in whitelist:
+        if tag.name not in valid_tags:
             tag.unwrap()
 
-    html_str = str(soup)
-
-    # جلادِ کلماتِ لاتینِ جا مانده در خروجیِ Groq
-    stop_words = [
-        "therefore",
-        "moreover",
-        "furthermore",
-        "however",
-        "also",
-        "d dàng",
-        "rõ",
-        "stands",
-        "involvement",
-        "depending",
-        "objector",
-        "leading",
-        "rapidly",
-        "conclusion",
-        "summary",
-    ]
-    for sw in stop_words:
-        html_str = re.sub(rf"\b{sw}\b", "", html_str, flags=re.IGNORECASE)
-
-    html_str = re.sub(r" {2,}", " ", html_str)
-    html_str = re.sub(r"\n{3,}", "\n\n", html_str)
-    return html_str.strip()
+    cleaned_html = str(soup)
+    cleaned_html = re.sub(r" {2,}", " ", cleaned_html)
+    cleaned_html = re.sub(r"\n{3,}", "\n\n", cleaned_html)
+    return cleaned_html.strip()
 
 
-def distill_headings_only(html_history: str) -> str:
-    """فقط تیترهایِ نگارش‌یافته را به عنوانِ حافظه برمی‌گرداند تا لحنِ مسمومِ قبلی تکرار نشود."""
-    if not html_history or not html_history.strip():
+def extract_headings_footprint(html_memory: str) -> str:
+    """استخراجِ خلاصه‌ی ساختاری از کانتکستِ غلتان."""
+    if not html_memory or not html_memory.strip():
         return "بخش اولِ مقاله"
-    soup = BeautifulSoup(html_history, "html.parser")
-    headings = [h.get_text().strip() for h in soup.find_all(["h2", "h3"])]
-    return "، ".join(headings[-5:]) if headings else "مقدمه"
+    soup = BeautifulSoup(html_memory, "html.parser")
+    headers = [h.get_text().strip() for h in soup.find_all(["h2", "h3"])]
+    return "، ".join(headers[-4:]) if headers else "مقدمه"
 
 
 class SEOGenerator:
@@ -106,91 +89,100 @@ class SEOGenerator:
         self, topic: str, keyword: str, research_data: dict[str, Any]
     ) -> dict[str, Any]:
         headings = research_data.get("headings", [])
-        competitor_headings_str = "\n".join(headings[:12])
+        competitors_tree = "\n".join(headings[:12])
 
-        sys_prompt = (
-            f"تو یک مدیر محصول و سردبیرِ ارشد در حوزه‌ی «{topic}» هستی. "
-            "وظیفه‌ی تو طراحیِ یک نقشه‌ی محتواییِ (Outline) کاملاً تخصصی، علمی، دقیق و منطبق بر واقعیت است. "
-            "خروجی فقط و فقط یک شیء JSON معتبر باشد."
+        sys_anchor = (
+            f"تو یک معمارِ اطلاعات و سردبیرِ ارشد در حوزه‌ی «{topic}» هستی. "
+            "وظیفه‌ی تو طراحیِ یک نقشه‌ی محتواییِ (Outline) کاملاً تخصصی، مستند و عاری از حشو است. "
+            "خروجی منحصراً یک شیء JSON معتبر باشد."
         )
 
-        user_prompt = (
+        user_request = (
             f"موضوع کلان: {topic}\n"
-            f"کلمه کلیدیِ تارگت: {keyword}\n\n"
-            f"تیترهای برترِ وب فارسی در این موضوع:\n{competitor_headings_str}\n\n"
-            "یک نقشه‌ی JSON دقیق با این معماری برگردان:\n"
+            f"کلمه کلیدیِ هدف: {keyword}\n\n"
+            f"ساختارِ تیترهای برترِ وب در این حوزه:\n{competitors_tree}\n\n"
+            "یک نقشه‌ی JSON دقیق با این معماریِ نوین برگردان:\n"
             "{\n"
-            '  "h1": "عنوان جذاب حاوی کلمه کلیدی",\n'
+            '  "h1": "عنوان اصلی و جذاب حاوی کلمه کلیدی",\n'
             '  "meta_description": "توضیح متا بین ۱۵۰ تا ۱۶۰ کاراکتر",\n'
+            '  "domain_glossary": {\n'
+            '    "اصطلاح_یا_کلمه‌ی_کلیدی_انگلیسی_۱": "معادل_دقیق،_فاخر_و_استاندارد_فارسی_در_همین_صنعت"،\n'
+            '    "اصطلاح_انگلیسی_۲": "معادل_فارسی_۲"\n'
+            "  },\n"
             '  "sections": [\n'
             "    {\n"
-            '      "h2": "عنوان بخش اصلی",\n'
-            '      "content_angle": "توضیحِ دو خطی برای نویسنده که دقیقاً چه دیتای فنی، کاربردی یا آمارِ واقعی در این بخش باز شود",\n'
-            '      "h3_list": ["زیرتیتر مرتبط ۱", "زیرتیتر مرتبط ۲"],\n'
-            '      "key_points": ["فکتِ واقعی ۱", "فکتِ واقعی ۲"]\n'
+            '      "h2": "عنوان بخش اصلی"،\n'
+            '      "core_thesis": "یک پاراگرافِ ۲ خطیِ پیوسته، غنی و ژورنالیستی که در آن تمامِ آمارها، حقایقِ علمی و زوایای دیدِ این تیتر به صورتِ یک متنِ یکپارچه (و کاملاً بدونِ استفاده از لیست یا بولت‌پوینت) روایت شده است"،\n'
+            '      "h3_list": ["زیرتیتر مرتبط ۱", "زیرتیتر مرتبط ۲"]\n'
             "    }\n"
             "  ],\n"
             '  "lsi_keywords": ["کلمه هم‌خانواده ۱", "کلمه ۲", "کلمه ۳", "کلمه ۴", "کلمه ۵"]\n'
             "}\n\n"
-            f"هشدارِ حیاتی: تحت هیچ شرایطی موضوعاتِ بی‌ربط (مثل خوراکی، نوشیدنی، شیر یا قهوه) را واردِ نقشه‌ی موضوعِ «{topic}» نکن! تمامِ بخش‌ها باید ۱۰۰٪ منطبق بر ماهیتِ واقعیِ این صنعت باشند."
+            "قوانینِ حیاتیِ اسکیما:\n"
+            "- بخش sections شامل ۵ تا ۷ بخش H2 باشد.\n"
+            "- در فیلد core_thesis 절대اً از کاراکترهای خط تیره (-) یا فرمتِ لیستی استفاده نکن؛ فقط یک پاراگرافِ متنیِ خالص و پرمغز بنویس.\n"
+            "- بخش domain_glossary باید شاملِ حداقل ۴ اصطلاحِ حیاتیِ این صنعت باشد تا نویسنده‌ی بعدی در ترجمه‌ی واژگان گمراه نشود."
         )
 
         messages = [
-            {"role": "system", "content": sys_prompt},
-            {"role": "user", "content": user_prompt},
+            {"role": "system", "content": sys_anchor},
+            {"role": "user", "content": user_request},
         ]
 
-        # قفل کردنِ تمپرچرِ نقشه روی 0.2 برای جلوگیریِ ۱۰۰٪ از نشتِ کشِ JSONهای قبلی
-        raw = await self.llm.generate(messages, json_mode=True)
-        return parse_json_response(raw)
+        # قفلِ تمپرچرِ نقشه روی 0.2 برای قطعِ ۱۰۰٪ ارتباط با کشِ JSONهای پیشین
+        raw_json = await self.llm.generate(messages, json_mode=True)
+        return parse_json_response(raw_json)
 
     async def draft_section(
         self,
         h2_title: str,
-        content_angle: str,
+        core_thesis: str,
         h3_list: list[str],
-        key_points: list[str],
         keyword: str,
         lsi_keywords: list[str],
+        domain_glossary: dict[str, str],
         previous_context: str = "",
     ) -> str:
         h3_str = "، ".join(h3_list) if h3_list else "بدون زیرعنوان H3"
-        key_points_str = (
-            "\n".join(f"- {p}" for p in key_points)
-            if key_points
-            else "تمرکز روی زاویه دید"
-        )
         lsi_str = "، ".join(lsi_keywords[:6])
+        glossary_str = (
+            json.dumps(domain_glossary, ensure_ascii=False)
+            if domain_glossary
+            else "واژه‌نامه‌ی عمومی"
+        )
 
-        history_summary = distill_headings_only(previous_context)
+        history_footprint = extract_headings_footprint(previous_context)
 
-        sys_prompt = (
-            get_dynamic_anchor(keyword)
+        sys_anchor = (
+            get_system_anchor(keyword)
             + " "
             "هرگز عنوان H2 را در ابتدای متن تکرار نکن. "
             "از کلی‌گویی و شروع پاراگراف‌ها با عباراتی مانند «همان‌طور که می‌دانید» پرهیز کن."
         )
 
-        user_prompt = (
-            f"بخشِ اختصاصیِ موردِ نگارش: «{h2_title}»\n"
-            f"هدایتِ محتوایی: {content_angle}\n"
-            f"زیرعنوان‌ها: {h3_str}\n"
-            f"نکاتِ کلیدی:\n{key_points_str}\n\n"
-            f"ردپایِ تیترهایِ نگارش‌یافته در بخش‌های قبل:\n[{history_summary}]\n"
-            "با نگاه به ردپای بالا، مطالبِ قبلی را تکرار نکن و مستقیماً واردِ دیتای تازه شو.\n\n"
-            f"کلمه کلیدیِ تارگت: {keyword} (یک بار در بافتِ متن حل شود)\n"
+        user_request = (
+            f"بخشِ تحتِ نگارش: «{h2_title}»\n"
+            f"زیرعنوان‌های خواسته شده: {h3_str}\n"
+            f"تزِ محتواییِ این بخش (این متن را بسط بده و به یک بدنه‌ی ژورنالیستیِ جذاب تبدیل کن):\n«{core_thesis}»\n\n"
+            f"واژه‌نامه‌ی اختصاصیِ صنف (در ترجمه‌ی مفاهیم، منحصراً از این معادل‌ها استفاده کن):\n{glossary_str}\n\n"
+            f"ردپایِ موضوعاتِ بخش‌های قبل:\n[{history_footprint}]\n"
+            "با نگاه به ردپای بالا، مطالبِ پیشین را تکرار نکن.\n\n"
+            f"کلمه کلیدیِ هدف: {keyword} (یک بار در متن حل شود)\n"
             f"کلماتِ LSI: {lsi_str}\n\n"
-            "قوانینِ حیاتی نگارش:\n"
-            "۱. پرهیز از تکرارِ بدیهیات: تیتر را با خودش تعریف نکن. مستقیماً واردِ مشخصاتِ فنی، کاربرد یا ارزشِ اقتصادیِ آن بخش شو.\n"
-            "۲. اصطلاحاتِ فنی: بکارگیریِ کلماتِ انگلیسیِ تخصصیِ همین صنعت (مثلاً در پتروشیمی: PE100, HDPE, ISO, ASTM) کاملاً مجاز و نشان‌دهنده‌ی تخصصِ نویسنده است.\n"
-            "۳. ممنوعیتِ کال‌تو‌اکشنِ تنبلانه: در انتهای پاراگراف‌ها عباراتی مثل «برای کسب اطلاعات بیشتر به صفحه مربوطه مراجعه کنید» ننویس.\n"
-            "۴. فرمت خروجی: بدنه را داخل تگ <p> بگذار. حداکثر ۳ خط در هر پاراگراف. خروجی فقط کدهای HTML بدنه باشد."
+            "قوانینِ معماریِ متن:\n"
+            "۱. بسطِ ارگانیک: تزِ محتواییِ بالا را با نثری پخته، توصیفی و دارایِ ریتمِ انسانی (ترکیبِ جملات کوتاه و بلند) بازنویسی کن.\n"
+            "۲. ممنوعیتِ اکو و تکرار: خروجیِ تو باید یک متنِ پیوسته و تمیز باشد؛ کپی کردنِ دوباره‌ی تزِ محتوایی در پایینِ متن، ممنوع است.\n"
+            "۳. ممنوعیتِ ارجاعِ کلیشه‌ای: عباراتی مثل «برای کسب اطلاعات بیشتر به صفحه‌ی مربوطه مراجعه کنید» ننویس.\n"
+            "۴. فرمت خروجی: متن بدنه داخل تگ <p>. حداکثر ۳ خط در هر پاراگراف. خروجی فقط کدهای HTML بدنه باشد."
         )
 
         messages = [
-            {"role": "system", "content": sys_prompt},
-            {"role": "user", "content": user_prompt},
+            {"role": "system", "content": sys_anchor},
+            {"role": "user", "content": user_request},
         ]
 
-        raw = await self.llm.generate(messages)
-        return gentle_html_sanitizer(raw)
+        # ستونِ سوم: قفل کردنِ دمای درَفت‌نویس روی 0.35 برای مهارِ مبالغه و تضمینِ فکت‌ها
+        # برای اعمال این دما، باید در llm_gateway.py متد generate قابلیت پذیرشِ temperature را داشته باشد،
+        # یا اگر ندارد، در خودِ gateway دمای پیش‌فرض را روی 0.4 بگذاری.
+        raw_html = await self.llm.generate(messages)
+        return pure_html_sanitizer(raw_html)
