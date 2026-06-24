@@ -71,7 +71,9 @@ async def _generate_article(
     keyword: str,
     llm_model: str | None = None,
 ) -> tuple[dict, str, int]:
-    llm = LLMGateway(model=llm_model) if llm_model else LLMGateway()
+    # استفاده از مدل Groq به عنوان پیش‌فرض در صورت عدم ارسال از کلاینت
+    target_model = llm_model or "groq/llama-3.3-70b-versatile"
+    llm = LLMGateway(model=target_model)
     researcher = WebResearcher()
     generator = SEOGenerator(llm)
     critic = SEOCritic(llm)
@@ -83,7 +85,6 @@ async def _generate_article(
     sections = outline.get("sections", [])
     sections_html: list[str] = []
 
-    # متغیر کانتکست غلتان برای حفظ حافظه کل مقاله در طول حلقه
     accumulated_context = f"عنوان اصلی مقاله (H1): {outline.get('h1', keyword)}\n\n"
 
     for section in sections:
@@ -102,7 +103,6 @@ async def _generate_article(
             previous_context=accumulated_context,
         )
         sections_html.append(html)
-        # اضافه کردن متن این بخش به کانتکست غلتان برای مطالعه بخش بعدی
         accumulated_context += f"\n=== بخش: {h2_title} ===\n{html}\n\n"
 
     full_content = _assemble_content(outline, sections_html)
@@ -144,25 +144,26 @@ def _build_stream_generator(
 ):
     async def event_stream() -> AsyncGenerator[str, None]:
         try:
-            # بررسی ایمن کلید اصلی درگاه هوش مصنوعی
-            if not getattr(settings, "OPENROUTER_API_KEY", None):
+            # بازگشتِ شکوهمندانهٔ چکِ کلید Groq
+            if not getattr(settings, "GROQ_API_KEY", None):
                 yield _sse_event(
                     {
                         "step": "error",
-                        "message": "کلید OPENROUTER_API_KEY در تنظیمات backend پیکربندی نشده است.",
+                        "message": "کلید GROQ_API_KEY در تنظیمات backend تنظیم نشده است.",
                     }
                 )
                 return
 
-            llm = LLMGateway(model=llm_model) if llm_model else LLMGateway()
+            target_model = llm_model or "groq/llama-3.3-70b-versatile"
+            llm = LLMGateway(model=target_model)
             researcher = WebResearcher()
             generator = SEOGenerator(llm)
             critic = SEOCritic(llm)
 
-            yield _sse_event({"step": "researching", "message": "در حال تحقیق زنده در گوگل..."})
+            yield _sse_event({"step": "researching", "message": "در حال تحقیق زنده..."})
             research_data = await researcher.research(topic)
 
-            yield _sse_event({"step": "outlining", "message": "در حال مهندسی ساختار و تیترها..."})
+            yield _sse_event({"step": "outlining", "message": "در حال طراحی ساختار..."})
             outline = await generator.generate_outline(topic, keyword, research_data)
 
             lsi_keywords = outline.get("lsi_keywords", [])
@@ -170,7 +171,6 @@ def _build_stream_generator(
             total = len(sections)
             sections_html: list[str] = []
 
-            # کانتکست غلتان در استریمینگ
             accumulated_context = f"عنوان اصلی مقاله (H1): {outline.get('h1', keyword)}\n\n"
 
             for index, section in enumerate(sections, start=1):
@@ -178,7 +178,7 @@ def _build_stream_generator(
                 yield _sse_event(
                     {
                         "step": "drafting",
-                        "message": f"در حال نگارش هوشمند بخش {index} از {total}: «{h2_title}»...",
+                        "message": f"در حال نگارش بخش {index} از {total}: «{h2_title}»...",
                     }
                 )
 
@@ -196,10 +196,9 @@ def _build_stream_generator(
 
             full_content = _assemble_content(outline, sections_html)
 
-            yield _sse_event({"step": "auditing", "message": "در حال ممیزی و خود-اصلاحی سئو..."})
+            yield _sse_event({"step": "auditing", "message": "در حال بررسی سئو..."})
             full_content, score = await _audit_and_improve(critic, full_content, keyword)
 
-            # ارسال تکه به تکه متن نهایی به فرانت‌اند
             chunk_size = 20
             for i in range(0, len(full_content), chunk_size):
                 yield _sse_event({"token": full_content[i : i + chunk_size]})
@@ -230,7 +229,7 @@ def _build_stream_generator(
             yield _sse_event(
                 {
                     "step": "error",
-                    "message": f"خطا در پردازش موتور تولید محتوا: {exc}",
+                    "message": f"خطا در تولید محتوا: {exc}",
                 }
             )
 
