@@ -37,9 +37,9 @@ def _can_view_article(user: User, article: Article) -> bool:
 
 
 def _assemble_content(outline: dict, sections_html: list[str]) -> str:
-    parts = [f"<h1>{outline['h1']}</h1>"]
+    parts = [f"<h1>{outline.get('h1', '')}</h1>"]
     for section, html in zip(outline.get("sections", []), sections_html):
-        parts.append(f"<h2>{section['h2']}</h2>")
+        parts.append(f"<h2>{section.get('h2', '')}</h2>")
         parts.append(html)
     return "".join(parts)
 
@@ -83,14 +83,27 @@ async def _generate_article(
     sections = outline.get("sections", [])
     sections_html: list[str] = []
 
+    # متغیر کانتکست غلتان برای حفظ حافظه کل مقاله در طول حلقه
+    accumulated_context = f"عنوان اصلی مقاله (H1): {outline.get('h1', keyword)}\n\n"
+
     for section in sections:
+        h2_title = section.get("h2", "")
+        content_angle = section.get("content_angle", "")
+        h3_list = section.get("h3_list", [])
+        key_points = section.get("key_points", [])
+
         html = await generator.draft_section(
-            section["h2"],
-            section.get("key_points", []),
-            keyword,
-            lsi_keywords,
+            h2_title=h2_title,
+            content_angle=content_angle,
+            h3_list=h3_list,
+            key_points=key_points,
+            keyword=keyword,
+            lsi_keywords=lsi_keywords,
+            previous_context=accumulated_context,
         )
         sections_html.append(html)
+        # اضافه کردن متن این بخش به کانتکست غلتان برای مطالعه بخش بعدی
+        accumulated_context += f"\n=== بخش: {h2_title} ===\n{html}\n\n"
 
     full_content = _assemble_content(outline, sections_html)
     full_content, score = await _audit_and_improve(critic, full_content, keyword)
@@ -131,11 +144,12 @@ def _build_stream_generator(
 ):
     async def event_stream() -> AsyncGenerator[str, None]:
         try:
-            if not settings.GROQ_API_KEY:
+            # بررسی ایمن کلید اصلی درگاه هوش مصنوعی
+            if not getattr(settings, "OPENROUTER_API_KEY", None):
                 yield _sse_event(
                     {
                         "step": "error",
-                        "message": "کلید GROQ_API_KEY در تنظیمات backend تنظیم نشده است.",
+                        "message": "کلید OPENROUTER_API_KEY در تنظیمات backend پیکربندی نشده است.",
                     }
                 )
                 return
@@ -145,10 +159,10 @@ def _build_stream_generator(
             generator = SEOGenerator(llm)
             critic = SEOCritic(llm)
 
-            yield _sse_event({"step": "researching", "message": "در حال تحقیق..."})
+            yield _sse_event({"step": "researching", "message": "در حال تحقیق زنده در گوگل..."})
             research_data = await researcher.research(topic)
 
-            yield _sse_event({"step": "outlining", "message": "در حال طراحی ساختار..."})
+            yield _sse_event({"step": "outlining", "message": "در حال مهندسی ساختار و تیترها..."})
             outline = await generator.generate_outline(topic, keyword, research_data)
 
             lsi_keywords = outline.get("lsi_keywords", [])
@@ -156,26 +170,36 @@ def _build_stream_generator(
             total = len(sections)
             sections_html: list[str] = []
 
+            # کانتکست غلتان در استریمینگ
+            accumulated_context = f"عنوان اصلی مقاله (H1): {outline.get('h1', keyword)}\n\n"
+
             for index, section in enumerate(sections, start=1):
+                h2_title = section.get("h2", f"بخش {index}")
                 yield _sse_event(
                     {
                         "step": "drafting",
-                        "message": f"در حال نگارش بخش {index} از {total}...",
+                        "message": f"در حال نگارش هوشمند بخش {index} از {total}: «{h2_title}»...",
                     }
                 )
+
                 html = await generator.draft_section(
-                    section["h2"],
-                    section.get("key_points", []),
-                    keyword,
-                    lsi_keywords,
+                    h2_title=h2_title,
+                    content_angle=section.get("content_angle", ""),
+                    h3_list=section.get("h3_list", []),
+                    key_points=section.get("key_points", []),
+                    keyword=keyword,
+                    lsi_keywords=lsi_keywords,
+                    previous_context=accumulated_context,
                 )
                 sections_html.append(html)
+                accumulated_context += f"\n=== بخش: {h2_title} ===\n{html}\n\n"
 
             full_content = _assemble_content(outline, sections_html)
 
-            yield _sse_event({"step": "auditing", "message": "در حال بررسی سئو..."})
+            yield _sse_event({"step": "auditing", "message": "در حال ممیزی و خود-اصلاحی سئو..."})
             full_content, score = await _audit_and_improve(critic, full_content, keyword)
 
+            # ارسال تکه به تکه متن نهایی به فرانت‌اند
             chunk_size = 20
             for i in range(0, len(full_content), chunk_size):
                 yield _sse_event({"token": full_content[i : i + chunk_size]})
@@ -206,7 +230,7 @@ def _build_stream_generator(
             yield _sse_event(
                 {
                     "step": "error",
-                    "message": f"خطا در تولید محتوا: {exc}",
+                    "message": f"خطا در پردازش موتور تولید محتوا: {exc}",
                 }
             )
 
