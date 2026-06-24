@@ -81,6 +81,16 @@ async def _generate_article(
     research_data = await researcher.research(topic)
     outline = await generator.generate_outline(topic, keyword, research_data)
 
+    # استخراجِ فکت‌هایِ زنده از خروجیِ ریسرچر برای تغذیه‌یِ مغزِ درَفت‌نویس
+    raw_snippets = research_data.get("snippets", []) or research_data.get(
+        "content", ""
+    )
+    live_facts_payload = (
+        "\n".join(raw_snippets[:8])
+        if isinstance(raw_snippets, list)
+        else str(raw_snippets)[:2000]
+    )
+
     lsi_keywords = outline.get("lsi_keywords", [])
     domain_glossary = outline.get("domain_glossary", {})
     sections = outline.get("sections", [])
@@ -98,7 +108,6 @@ async def _generate_article(
 
         h3_list = section.get("h3_list", [])
 
-        # ترمز دستیِ کش‌آمده برای شارژِ باکِ Groq
         await asyncio.sleep(8.5)
 
         html = await generator.draft_section(
@@ -108,6 +117,7 @@ async def _generate_article(
             keyword=keyword,
             lsi_keywords=lsi_keywords,
             domain_glossary=domain_glossary,
+            grounding_source_facts=live_facts_payload,  # <--- اتصالِ لوله‌یِ فکت‌ها
             previous_context=accumulated_context,
         )
         sections_html.append(html)
@@ -172,6 +182,16 @@ def _build_stream_generator(
             )
             research_data = await researcher.research(topic)
 
+            # استخراجِ فکت‌ها در حالتِ استریم
+            raw_snippets = research_data.get("snippets", []) or research_data.get(
+                "content", ""
+            )
+            live_facts_payload = (
+                "\n".join(raw_snippets[:8])
+                if isinstance(raw_snippets, list)
+                else str(raw_snippets)[:2000]
+            )
+
             yield _sse_event(
                 {
                     "step": "outlining",
@@ -193,11 +213,10 @@ def _build_stream_generator(
                 yield _sse_event(
                     {
                         "step": "drafting",
-                        "message": f"در حال نگارشِ ساختاریافته‌ی بخش {index} از {total}: «{h2_title}»...",
+                        "message": f"در حال نگارشِ مستندِ بخش {index} از {total}: «{h2_title}»...",
                     }
                 )
 
-                # <--- ترمزِ ۸.۵ ثانیه‌ایِ استریم برای عبورِ امن از لبه‌ی ۶۰۰۰ توکنی
                 await asyncio.sleep(8.5)
 
                 core_thesis = section.get("core_thesis", "")
@@ -213,6 +232,7 @@ def _build_stream_generator(
                     keyword=keyword,
                     lsi_keywords=lsi_keywords,
                     domain_glossary=domain_glossary,
+                    grounding_source_facts=live_facts_payload,  # <--- تزریق به استریم
                     previous_context=accumulated_context,
                 )
                 sections_html.append(html)
