@@ -16,6 +16,7 @@ desktop.ini
 .env.*.local
 !.env.example
 !**/.env.example
+.env.example
 
 # Python / Backend
 backend/.venv/
