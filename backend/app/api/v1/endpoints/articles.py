@@ -249,7 +249,13 @@ def _build_stream(
             full_content = _assemble_html(outline, sections_html)
             full_content, score = await _run_seo_audit(critic, full_content, keyword)
 
-            # ── مرحله ۵: ذخیره در دیتابیس ────────────────────
+            # ── مرحله ۵: ارسال محتوای نهایی token به token ──
+            # فرانت از "token" برای نمایش در editor استفاده می‌کند
+            chunk_size = 50
+            for i in range(0, len(full_content), chunk_size):
+                yield _sse({"token": full_content[i: i + chunk_size]})
+
+            # ── مرحله ۶: ذخیره در دیتابیس ────────────────────
             article = _save_article(db, outline, full_content, keyword, score, current_user.id)
 
             yield _sse({
