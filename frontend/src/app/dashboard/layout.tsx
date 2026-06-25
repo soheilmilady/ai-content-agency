@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import Cookies from "js-cookie";
 import {
-  FilePlus2,
   LayoutDashboard,
   LogOut,
   UserCircle,

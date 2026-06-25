@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FilePlus2, UserCircle, Users, Sparkles } from "lucide-react";
+import { UserCircle, Users, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
