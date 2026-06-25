@@ -77,7 +77,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <Sparkles className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-base font-extrabold tracking-tight">سیدگارد AI</h1>
+            <h1 className="text-base font-extrabold tracking-tight">AI content generator</h1>
             <p className="text-xs text-muted-foreground font-medium">پنل مدیریت محتوا</p>
           </div>
         </div>
