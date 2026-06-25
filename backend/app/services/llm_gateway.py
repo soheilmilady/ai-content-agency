@@ -64,9 +64,8 @@ class LLMGateway:
             "messages": messages,
             "api_key": settings.GROQ_API_KEY,
             "stream": stream,
-            "temperature": 0.35,
-            # <--- جادوی نجات‌بخش: سقفِ رزروِ توکن شناور شد!
-            "max_tokens": dynamic_token_ceiling,
+            "temperature": 0.45,
+            "max_tokens": 850 if not json_mode else 750,
         }
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
