@@ -1,3 +1,11 @@
+"""
+SEO Generator v2 — Grounded Generation
+هدف: کاهش hallucination با مدل‌های ضعیف از طریق:
+۱. جداسازی facts برای هر بخش (Section-Specific Grounding)
+۲. Constraint-based prompting (فقط از facts موجود بنویس)
+۳. کوتاه کردن context برای جلوگیری از گم شدن مدل
+۴. Fact verification pass قبل از خروجی نهایی
+"""
 import json
 import re
 from typing import Any
@@ -7,92 +15,102 @@ from app.services.json_utils import parse_json_response
 from app.services.llm_gateway import LLMGateway
 
 
-def get_system_anchor(domain_context: str) -> str:
-    return f"""تو یک پژوهشگرِ برجسته، متخصصِ کنترلِ کیفیت و سردبیرِ تراز اولِ وبِ فارسی در حوزه‌ی «{domain_context}» هستی.
-معماریِ کلامِ تو مبتنی بر «اصالتِ فیزیکیِ اشیاء، منطقِ سفت‌وسختِ علمی، و نثری پیوسته» است.
+# ─────────────────────────────────────────────
+# ۱. فیلتر کاراکترهای بیگانه (فارسی دست‌نخورده)
+# ─────────────────────────────────────────────
+_ALIEN_FILTER = re.compile(
+    r"[\u0900-\u097F"      # هندی
+    r"\u4E00-\u9FFF"       # چینی
+    r"\u3040-\u30FF"       # ژاپنی
+    r"\u0E00-\u0E7F"       # تایلندی
+    r"\u0400-\u04FF"       # سیریلیک
+    r"\u0500-\u052F]+"     # سیریلیک تکمیلی
+)
 
-قوانینِ بنیادینِ پردازشِ ذهنیِ تو:
-۱. قانونِ فیزیکِ اشیاء (Strict Material Reality): خواصِ مواد را تحریف نکن! (مثلاً پلاستیک 'زنگ نمی‌زند'، بلکه می‌پوسد یا می‌شکند؛ فولادِ ضدزنگ 'استریل نمی‌کند'، بلکه در برابرِ اکسید شدن مقاوم است). حقایقِ متالورژی و شیمیایی را دقیق بنویس.
-۲. طردِ تخیلاتِ سایبرپانک: ابزارهایِ مکانیکیِ ساده (مثل ناخن‌گیر یا چکش) دارایِ 'سیستم‌هایِ پیشرفته‌یِ الکترونیکی یا استریلِ داخلی' نیستند! آلودگی‌زداییِ یک ابزار، 'عملی' است که کاربر با الکل یا حرارت روی آن انجام می‌دهد، نه آپشنی در داخلِ خودِ دستگاه.
-۳. ممنوعیتِ تضادِ معنایی: عباراتی مثل «برای جلوگیری از آلودگی‌زدایی» یک باگِ خنده‌دارِ نگارشی است؛ منظورِ تو «برای پیشگیری از انتقالِ آلودگی» یا «جهتِ سهولت در گندزدایی» است. مفاهیم را درست متصل کن.
-۴. زبانِ خالص: کلِ متن باید به زبانِ فارسیِ معیار و زنده باشد."""
-
-
-_ALIEN_BYTE_FILTER = re.compile(
-    r"[\u0900-\u097F"  # هندی / سانسکریت
-    r"\u4E00-\u9FFF\u3040-\u30FF\u31F0-\u31FF"  # کانجی / چینی / ژاپنی -> مهارِ «详»
-    r"\u0E00-\u0E7F"  # تایلندی
-    r"\u0400-\u04FF\u0500-\u052F"  # سیریلیک
-    r"ạảăắằẳẵặâấầẩẫậẹẻẽêềếểễệỉịọỏôốồổỗộơớờởỡợụủưứừửữựỵỷỹĐđ"  # ویتنامی
-    r"]+"
+_HALLUCINATION_PATTERNS = re.compile(
+    r"\b(\d{1,3}٪|\d+\s*درصد|\d+\s*میلیون|\d+\s*هزار\s*تومان"
+    r"|\d{4}\s*استاندارد|ISO\s*\d+|EN\s*\d+)\b"
 )
 
 
-def pure_tree_walker_sanitizer(raw_html_output: str) -> str:
-    if not raw_html_output:
+def sanitize_html(raw: str) -> str:
+    """پاکسازی HTML خروجی مدل."""
+    if not raw:
         return ""
-
-    cleaned = re.sub(
-        r"<think>.*?</think>", "", raw_html_output, flags=re.DOTALL | re.IGNORECASE
-    )
-    cleaned = re.sub(r"\x60{3}html|\x60{3}", "", cleaned, flags=re.IGNORECASE)
-
-    # <--- بازگشتِ شکوهمندانه‌ی جلادِ بایت‌ها (حلقه‌ی گمشده‌ی جراحیِ ۱۷)
-    cleaned = _ALIEN_BYTE_FILTER.sub("", cleaned)
-
-    cliches = [
-        r"\bدر نتیجه،\b",
-        r"\bبه طور کلی،\b",
-        r"\bبنابراین،\b",
-        r"\bهمان‌طور که گفته شد،\b",
-        r"\bهمان‌گونه که می‌دانید،\b",
-        r"\btherefore\b",
-        r"\bconclusion\b",
-        r"\bsummary\b",
-        r"\bبه طور详یعی\b",  # شکارچیِ اختصاصیِ سوتیِ اخیر
-    ]
-    for cliche in cliches:
-        cleaned = re.sub(cliche, "", cleaned, flags=re.IGNORECASE)
-
-    soup = BeautifulSoup(cleaned, "html.parser")
-    valid_tags = {
-        "p",
-        "h2",
-        "h3",
-        "h4",
-        "ul",
-        "ol",
-        "li",
-        "strong",
-        "em",
-        "b",
-        "i",
-        "br",
-    }
-
+    # حذف think blocks و markdown fences
+    out = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL | re.IGNORECASE)
+    out = re.sub(r"```html|```", "", out, flags=re.IGNORECASE)
+    # حذف کاراکترهای بیگانه
+    out = _ALIEN_FILTER.sub("", out)
+    # فقط تگ‌های مجاز
+    soup = BeautifulSoup(out, "html.parser")
     for tag in soup.find_all(True):
-        if tag.name not in valid_tags:
+        if tag.name not in {"p", "h3", "h4", "ul", "ol", "li", "strong", "em", "br"}:
             tag.unwrap()
-
-    final_str = str(soup)
-    final_str = re.sub(r" {2,}", " ", final_str)
-    final_str = re.sub(r"\n{3,}", "\n\n", final_str)
-    return final_str.strip()
-
-
-def extract_safe_context(raw_html_history: str) -> str:
-    if not raw_html_history or not raw_html_history.strip():
-        return "بدنه‌ی مقاله هنوز آغاز نشده است."
-
-    soup = BeautifulSoup(raw_html_history, "html.parser")
-    written_headers = [h.get_text().strip() for h in soup.find_all(["h2", "h3"])]
-
-    if not written_headers:
-        return "مقدماتِ کلان نگارش یافته است."
-
-    return f"تیترهای بسط داده شده تا این لحظه: ({' | '.join(written_headers[-4:])})"
+    out = str(soup)
+    out = re.sub(r" {2,}", " ", out)
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out.strip()
 
 
+def extract_written_titles(html_history: str) -> str:
+    """فقط عناوین نوشته‌شده را برمی‌گرداند — نه کل HTML."""
+    if not html_history:
+        return "هنوز چیزی نوشته نشده."
+    soup = BeautifulSoup(html_history, "html.parser")
+    titles = [h.get_text().strip() for h in soup.find_all(["h1", "h2", "h3"])]
+    return " | ".join(titles[-5:]) if titles else "هنوز چیزی نوشته نشده."
+
+
+def flag_unverified_claims(html: str) -> str:
+    """
+    اعداد و آمار تولید شده توسط مدل را با [نیاز به تأیید] علامت‌گذاری می‌کند.
+    این به کاربر هشدار می‌دهد قبل از انتشار بررسی کند.
+    """
+    return _HALLUCINATION_PATTERNS.sub(
+        lambda m: f'<mark title="این عدد را قبل از انتشار تأیید کنید">{m.group()}</mark>',
+        html,
+    )
+
+
+# ─────────────────────────────────────────────
+# ۲. توزیع facts به بخش‌های مرتبط
+# ─────────────────────────────────────────────
+def distribute_facts_to_sections(
+    sections: list[dict], all_facts: list[str]
+) -> dict[str, list[str]]:
+    """
+    هر fact را به مرتبط‌ترین بخش نسبت می‌دهد.
+    جلوگیری از دادن یک facts یکسان به همه بخش‌ها.
+    """
+    result: dict[str, list[str]] = {s.get("h2", ""): [] for s in sections}
+
+    for fact in all_facts:
+        best_section = None
+        best_score = 0
+        fact_words = set(fact.replace("،", " ").replace(".", " ").split())
+
+        for section in sections:
+            h2 = section.get("h2", "")
+            thesis = section.get("core_thesis", "")
+            section_words = set((h2 + " " + thesis).split())
+            score = len(fact_words & section_words)
+            if score > best_score:
+                best_score = score
+                best_section = h2
+
+        if best_section and best_score > 0:
+            result[best_section].append(fact)
+        elif sections:
+            # اگه مطابقتی نبود به اولین بخش بده
+            result[sections[0].get("h2", "")].append(fact)
+
+    return result
+
+
+# ─────────────────────────────────────────────
+# ۳. کلاس اصلی
+# ─────────────────────────────────────────────
 class SEOGenerator:
 
     def __init__(self, llm: LLMGateway | None = None) -> None:
@@ -102,48 +120,47 @@ class SEOGenerator:
         self, topic: str, keyword: str, research_data: dict[str, Any]
     ) -> dict[str, Any]:
         headings = research_data.get("headings", [])
-        competitors_tree = "\n".join(headings[:12])
-
-        sys_anchor = (
-            f"تو یک معمارِ محتوا و سردبیرِ دانشنامه در حوزه‌ی «{topic}» هستی. "
-            "وظیفه‌ی تو طراحیِ یک نقشه‌ی محتواییِ (Outline) کاملاً تخصصی، مستند و منطقی است. "
-            "خروجی منحصراً یک شیء JSON معتبر باشد."
-        )
-
-        user_request = (
-            f"موضوع کلان: {topic}\n"
-            f"کلمه کلیدیِ هدف: {keyword}\n\n"
-            f"ساختارِ تیترهای برترِ وب در این حوزه:\n{competitors_tree}\n\n"
-            "یک نقشه‌ی JSON دقیق با این معماری برگردان:\n"
-            "{\n"
-            '  "h1": "عنوان جذاب حاوی کلمه کلیدی",\n'
-            '  "meta_description": "توضیح متا بین ۱۵۰ تا ۱۶۰ کاراکتر",\n'
-            '  "domain_glossary": {\n'
-            '    "اصطلاح_تخصصی_انگلیسی_۱": "معادل_دقیق،_رایج_و_استاندارد_فارسی"،\n'
-            '    "اصطلاح_انگلیسی_۲": "معادل_فارسی_۲"\n'
-            "  },\n"
-            '  "sections": [\n'
-            "    {\n"
-            '      "h2": "عنوان بخش اصلی"،\n'
-            '      "core_thesis": "یک پاراگرافِ ۲ خطیِ پیوسته، منطقی و کاملاً علمی که در آن تمامِ حقایقِ فیزیکی، عملکردی و مشخصاتِ این تیتر به صورتِ یک متنِ یکپارچه روایت شده است"،\n'
-            '      "h3_list": ["زیرتیتر مرتبط ۱", "زیرتیتر مرتبط ۲"]\n'
-            "    }\n"
-            "  ],\n"
-            '  "lsi_keywords": ["کلمه هم‌خانواده ۱", "کلمه ۲", "کلمه ۳", "کلمه ۴", "کلمه ۵"]\n'
-            "}\n\n"
-            "قوانینِ حیاتیِ اسکیما:\n"
-            "- بخش sections شامل ۵ تا ۷ بخش H2 باشد.\n"
-            "- در فیلد core_thesis 절대اً از بولت‌پوینت استفاده نکن؛ فقط یک پاراگرافِ متنیِ خالص بنویس.\n"
-            "- بخش domain_glossary شاملِ حداقل ۴ اصطلاحِ کلیدیِ این حوزه باشد."
-        )
 
         messages = [
-            {"role": "system", "content": sys_anchor},
-            {"role": "user", "content": user_request},
+            {
+                "role": "system",
+                "content": (
+                    f"تو یک معمار محتوای سئو در حوزه «{topic}» هستی. "
+                    "خروجی: فقط JSON معتبر، بدون توضیح اضافه، تمام مقادیر فارسی."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"موضوع: {topic}\n"
+                    f"کلمه کلیدی: {keyword}\n"
+                    f"تیترهای رقبا (برای الهام): {', '.join(headings[:8])}\n\n"
+                    "JSON با این ساختار دقیق:\n"
+                    "{\n"
+                    '  "h1": "عنوان حاوی کلمه کلیدی",\n'
+                    '  "meta_description": "۱۵۰ تا ۱۶۰ کاراکتر فارسی",\n'
+                    '  "domain_glossary": {"اصطلاح_انگلیسی": "معادل_فارسی"},\n'
+                    '  "sections": [\n'
+                    "    {\n"
+                    '      "h2": "عنوان بخش",\n'
+                    '      "core_thesis": "یک جمله توضیح این بخش — چه سوالی جواب می‌دهد؟",\n'
+                    '      "h3_list": ["زیرعنوان ۱", "زیرعنوان ۲"],\n'
+                    '      "required_facts": ["چه نوع اطلاعاتی برای این بخش لازم است؟"]\n'
+                    "    }\n"
+                    "  ],\n"
+                    '  "lsi_keywords": ["کلمه مرتبط ۱", "کلمه ۲", "کلمه ۳"]\n'
+                    "}\n\n"
+                    "قوانین:\n"
+                    "- ۵ تا ۶ بخش H2\n"
+                    "- هر H2 منحصربه‌فرد باشد\n"
+                    "- core_thesis یک جمله واضح باشد، نه کلی‌گویی\n"
+                    "- required_facts مشخص کند این بخش به چه داده‌ای نیاز دارد"
+                ),
+            },
         ]
 
-        raw_json = await self.llm.generate(messages, json_mode=True)
-        return parse_json_response(raw_json)
+        raw = await self.llm.generate(messages, json_mode=True)
+        return parse_json_response(raw)
 
     async def draft_section(
         self,
@@ -153,57 +170,72 @@ class SEOGenerator:
         keyword: str,
         lsi_keywords: list[str],
         domain_glossary: dict[str, str],
-        grounding_source_facts: str = "",
-        previous_context: str = "",
+        section_facts: list[str],      # facts اختصاصی این بخش
+        written_titles: str = "",       # فقط عناوین، نه کل HTML
+        required_facts: list[str] = [], # چه نوع اطلاعاتی نیاز است
     ) -> str:
-        h3_str = "، ".join(h3_list) if h3_list else "بدون زیرعنوان H3"
-        lsi_str = "، ".join(lsi_keywords[:6])
-        glossary_str = (
-            json.dumps(domain_glossary, ensure_ascii=False)
-            if domain_glossary
-            else "واژه‌نامه‌ی عمومی"
-        )
 
-        safe_history_report = extract_safe_context(previous_context)
-
-        # تزریقِ فکت‌های واقعیِ سرچِ گوگل به مغزِ نویسنده
-        facts_block = ""
-        if grounding_source_facts:
-            facts_block = (
-                "\n\n=== [مواد خامِ علمیِ استخراج شده از جستجوی زنده گوگل] ===\n"
-                f"{grounding_source_facts}\n"
-                "=======================================================\n"
-                "قانونِ استناد (Grounding): در بسط دادنِ متن، منحصراً به فکت‌هایِ بالا تکیه کن و از تخیلاتِ غیرمنطقی بپرهیز.\n"
+        # اگه fact کافی نداریم، به مدل صراحتاً بگو
+        if len(section_facts) < 2:
+            facts_instruction = (
+                "⚠️ هشدار: اطلاعات کافی از جستجوی وب برای این بخش پیدا نشد.\n"
+                "فقط اطلاعاتی بنویس که قطعاً درست است.\n"
+                "از اعداد، آمار یا ادعاهای خاص بدون منبع پرهیز کن.\n"
+                "اگه چیزی نمی‌دانی، به جای ساختن، بگو «برای اطلاعات دقیق‌تر با متخصص مشورت کنید»."
             )
+            facts_str = "اطلاعات کافی از وب پیدا نشد."
+        else:
+            facts_instruction = (
+                "فقط از این اطلاعات تأییدشده استفاده کن. "
+                "چیزی اضافه نکن که در این facts نیست."
+            )
+            facts_str = "\n".join(f"• {f}" for f in section_facts[:6])
 
-        sys_anchor = (
-            get_system_anchor(keyword)
-            + " "
-            "هرگز عنوان H2 را در ابتدای متن تکرار نکن. "
-            "از کلی‌گویی و شروع پاراگراف‌ها با عباراتی مانند «همان‌طور که می‌دانید» پرهیز کن."
-        )
-
-        user_request = (
-            f"بخشِ تحتِ نگارش: «{h2_title}»\n"
-            f"زیرعنوان‌ها: {h3_str}\n"
-            f"تزِ محتواییِ این بخش:\n«{core_thesis}»\n"
-            f"{facts_block}\n"
-            f"واژه‌نامه‌ی اختصاصیِ صنف:\n{glossary_str}\n\n"
-            f"وضعیتِ پیشرفتِ مقاله:\n[{safe_history_report}]\n"
-            "با نگاه به گزارشِ بالا، مطالبِ گفته شده در تیترهای قبل را مطلقاً تکرار نکن.\n\n"
-            f"کلمه کلیدیِ هدف: {keyword} (یک بار در متن حل شود)\n"
-            f"کلماتِ LSI: {lsi_str}\n\n"
-            "قوانینِ حیاتی نگارش:\n"
-            "۱. قفلِ ضد لکنت (Anti-Loop): تکرارِ یک جمله در انتهای دو پاراگرافِ متوالی، ممنوع است!\n"
-            "۲. پرهیز از تکرارِ کلماتِ کلیشه‌ای: کلماتی مثل 'بهداشتی و کارآمد' را مثل طوطی در هر خط تکرار نکن؛ از مترادف‌های پویا استفاده کن.\n"
-            "۳. ممنوعیتِ ارجاعِ کلیشه‌ای: عباراتی مثل «برای کسب اطلاعات بیشتر به صفحه‌ی مربوطه مراجعه کنید» ننویس.\n"
-            "۴. فرمت خروجی: متن بدنه داخل تگ <p>. حداکثر ۳ خط در هر پاراگراف. خروجی فقط کدهای HTML بدنه باشد."
+        h3_str = "، ".join(h3_list) if h3_list else "ندارد"
+        lsi_str = "، ".join(lsi_keywords[:5])
+        glossary_note = (
+            "اصطلاحات تخصصی این حوزه: "
+            + "، ".join(f"{en}={fa}" for en, fa in list(domain_glossary.items())[:4])
+            if domain_glossary else ""
         )
 
         messages = [
-            {"role": "system", "content": sys_anchor},
-            {"role": "user", "content": user_request},
+            {
+                "role": "system",
+                "content": (
+                    f"تو یک نویسنده محتوای فارسی در حوزه «{keyword}» هستی.\n"
+                    "قوانین اساسی:\n"
+                    "۱. فقط به زبان فارسی بنویس\n"
+                    "۲. فقط از اطلاعات داده‌شده استفاده کن — چیزی نساز\n"
+                    "۳. اگه اطلاعاتی نداری، ننویس\n"
+                    "۴. عنوان H2 را تکرار نکن\n"
+                    "۵. خروجی فقط HTML با تگ‌های <p> و <h3>"
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"بخش: «{h2_title}»\n"
+                    f"هدف این بخش: {core_thesis}\n"
+                    f"زیرعنوان‌ها: {h3_str}\n\n"
+                    f"=== اطلاعات تأییدشده برای این بخش ===\n"
+                    f"{facts_str}\n"
+                    f"==========================================\n\n"
+                    f"{facts_instruction}\n\n"
+                    f"عناوینی که قبلاً نوشته‌ام: [{written_titles}]\n"
+                    "مطالب این عناوین را تکرار نکن.\n\n"
+                    f"کلمه کلیدی (یک بار استفاده): {keyword}\n"
+                    f"کلمات مرتبط: {lsi_str}\n"
+                    f"{glossary_note}\n\n"
+                    "مشخصات متن:\n"
+                    "- ۱۲۰ تا ۲۰۰ کلمه\n"
+                    "- هر جمله زیر ۲۵ کلمه\n"
+                    "- هر پاراگراف حداکثر ۳ خط"
+                ),
+            },
         ]
 
-        raw_html = await self.llm.generate(messages)
-        return pure_tree_walker_sanitizer(raw_html)
+        raw = await self.llm.generate(messages)
+        html = sanitize_html(raw)
+        # علامت‌گذاری اعداد و آمار برای تأیید کاربر
+        return flag_unverified_claims(html)
