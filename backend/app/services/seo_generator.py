@@ -7,7 +7,6 @@ from bs4 import BeautifulSoup
 from app.services.json_utils import parse_json_response
 from app.services.llm_gateway import LLMGateway
 
-# فیلتر کاراکترهای بیگانه (حذف زبان‌های شرقی و سیریلیک، آزاد گذاشتن فارسی و انگلیسی)
 _ALIEN_FILTER = re.compile(
     r"[\u0900-\u097F\u4E00-\u9FFF\u3040-\u30FF\u0E00-\u0E7F\u0400-\u04FF\u0500-\u052F"
     r"ạảăắằẳẵặâấầẩẫậẹẻẽêềếểễệỉịọỏôốồổỗộơớờởỡợụủưứừửữựỵỷỹĐđ]+"
@@ -15,10 +14,6 @@ _ALIEN_FILTER = re.compile(
 
 @dataclass
 class ArticleState:
-    """
-    حافظه مرکزی و مدیر وضعیت مقاله.
-    این شیء در کل چرخه حیات مقاله همراه ماست و جلوی تکرار مفاهیم را می‌گیرد.
-    """
     topic: str
     keyword: str
     research_data: dict = field(default_factory=dict)
@@ -32,7 +27,6 @@ class ArticleState:
         if not self.completed_theses:
             return "این اولین بخش مقاله است. با یک مقدمه‌ی جذاب شروع کن و مستقیماً وارد بحث اصلی شو."
         
-        # به جای نهی کردن مدل، به او می‌گوییم شیفت کند (تکنیک Shift Focus)
         last_thesis = self.completed_theses[-1]
         return (
             f"پایانِ بخشِ قبلی روی این مفهوم متمرکز بود: «{last_thesis}»\n"
@@ -41,23 +35,25 @@ class ArticleState:
         )
 
 
-def sanitize_html(raw: str) -> str:
-    """پاکسازی HTML با پشتیبانی از تگ‌های غنی و حذف مارک‌دان‌های مزاحم."""
+def sanitize_html(raw: str, h2_title: str = "") -> str:
+    """پاکسازی HTML با پشتیبانی از تگ‌های غنی و حذف مارک‌دان‌ها و تیترهای اکوشده."""
     if not raw:
         return ""
 
     out = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL | re.IGNORECASE)
     out = re.sub(r"\x60{3}html|\x60{3}", "", out, flags=re.IGNORECASE)
-    
-    # حذف کاراکترهای مارک‌دان (مثل ## و ###) که به اشتباه چاپ شده‌اند
     out = re.sub(r"(?m)^#{1,6}\s*", "", out)
-    
     out = _ALIEN_FILTER.sub("", out)
 
-    # فیلتر کلمات انگلیسی غیرضروری که معادل فارسی دارند
-    cliches = [r"\bInteraction\b"]
+    cliches = [r"\bInteraction\b", r"\bnhanh\b", r"\bkéo dài\b"]
     for cliche in cliches:
-        out = re.sub(cliche, "تعامل", out, flags=re.IGNORECASE)
+        out = re.sub(cliche, " ", out, flags=re.IGNORECASE)
+
+    # پادزهر قطعی برای سندروم اکو: اگر تیتر H2 در ابتدای متن تکرار شده بود، آن را پاک کن
+    if h2_title:
+        # پاک کردن تیتر اگر دقیقاً با متن شروع شده باشد
+        h2_pattern = re.escape(h2_title)
+        out = re.sub(rf"^(<p>)?\s*{h2_pattern}\s*(</p>)?\s*", "", out, flags=re.IGNORECASE)
 
     soup = BeautifulSoup(out, "html.parser")
     valid_tags = {
@@ -75,7 +71,6 @@ def sanitize_html(raw: str) -> str:
 
 
 def fast_seo_scorer(html: str, keyword: str) -> int:
-    """ارزیاب آفلاین، فوق‌سریع و مبتنی بر Constraint برای سئو."""
     soup = BeautifulSoup(html, "html.parser")
     text = soup.get_text(separator=" ", strip=True)
     words = text.split()
@@ -113,10 +108,6 @@ class SEOGenerator:
         self.llm = llm or LLMGateway()
 
     async def validate_and_deduplicate_facts(self, facts: list[str]) -> list[str]:
-        """
-        فاز ۳: پالایش فکت‌ها
-        حذف تناقضات، ادغام تکرارها و حذف محتوای تبلیغاتی.
-        """
         if not facts:
             return []
             
@@ -135,11 +126,9 @@ class SEOGenerator:
             ], json_mode=True)
             
             parsed = parse_json_response(raw_json)
-            # اطمینان از اینکه خروجی یک لیست از رشته‌هاست
             if isinstance(parsed, list):
                 return parsed
             elif isinstance(parsed, dict):
-                # در صورتی که LLM خروجی را داخل یک کلید دیکشنری گذاشت
                 for val in parsed.values():
                     if isinstance(val, list):
                         return val
@@ -268,9 +257,9 @@ class SEOGenerator:
                 "content": (
                     f"تو یک روزنامه‌نگار تحلیلی و کارشناس سئو در حوزه «{keyword}» هستی.\n"
                     "قوانینِ معماری و نگارش:\n"
-                    "۱. حتماً کلمه کلیدی را ۱ یا ۲ بار در متن کاملاً طبیعی استفاده کن.\n"
-                    "۲. کلمات انگلیسی تخصصی مجاز هستند اما کلمات عمومی باید کاملاً فارسی باشند.\n"
-                    "۳. عنوان H2 را در خط اول پاراگراف تکرار نکن.\n"
+                    "۱. کلمات عمومی منحصراً باید به زبان فارسی معیار نوشته شوند. استفاده از کلمات بیگانه غیرضروری در بین متن فارسی اکیداً ممنوع است.\n"
+                    "۲. کلمه کلیدی را ۱ یا ۲ بار در متن کاملاً طبیعی استفاده کن.\n"
+                    "۳. تحت هیچ شرایطی عنوان H2 را در خط اول متنت کپی و تکرار نکن! مستقیماً وارد تولید محتوا شو.\n"
                     "۴. به هیچ‌وجه یک جمله را در یک پاراگراف دو بار تکرار نکن (پرهیز از ساختارهای حلقوی).\n"
                     "۵. حتماً جمله‌ی آخر را با نقطه (.) ببند و متن را در میانه رها نکن.\n"
                     "۶. خروجی منحصراً HTML با تگ‌های مجاز است. نوشتنِ کاراکترهای مارک‌دان مثل ## ممنوع است."
@@ -292,7 +281,7 @@ class SEOGenerator:
                     f"کلمه کلیدیِ هدف: {keyword}\n"
                     f"کلماتِ مرتبط سئو (LSI): {lsi_str}\n"
                     f"{glossary_note}\n\n"
-                    "متنِ این بخش را روان، تحلیلی و پرمحتوا بنویس."
+                    "بدون تکرارِ عنوانِ این بخش، مستقیماً پاراگرافِ اول را با نثری روان و پرمحتوا آغاز کن."
                 ),
             },
         ]
@@ -303,6 +292,8 @@ class SEOGenerator:
 
     async def draft_section(self, *args, **kwargs) -> str:
         accumulated_html = ""
+        # استخراج h2_title از kwargs برای پاس دادن به سینیتایزر
+        h2_title = kwargs.get("h2_title", "")
         async for chunk in self.draft_section_stream(*args, **kwargs):
             accumulated_html += chunk
-        return sanitize_html(accumulated_html)
+        return sanitize_html(accumulated_html, h2_title=h2_title)
