@@ -30,7 +30,7 @@ from app.schemas.article import (
 )
 from app.services.llm_gateway import LLMGateway
 from app.services.seo_critic import SEOCritic
-from app.services.seo_generator_v2 import (
+from app.services.seo_generator import (
     SEOGenerator,
     distribute_facts_to_sections,
     extract_written_titles,
