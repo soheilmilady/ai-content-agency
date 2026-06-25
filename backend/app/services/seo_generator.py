@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from app.services.json_utils import parse_json_response
 from app.services.llm_gateway import LLMGateway
 
-# بازگشتِ مقتدرانه‌ی فیلتر کاراکترهای ویتنامی، هندی، چینی و سیریلیک
+# فیلتر کاراکترهای بیگانه (حذف زبان‌های شرقی و سیریلیک، آزاد گذاشتن فارسی و انگلیسی)
 _ALIEN_FILTER = re.compile(
     r"[\u0900-\u097F\u4E00-\u9FFF\u3040-\u30FF\u0E00-\u0E7F\u0400-\u04FF\u0500-\u052F"
     r"ạảăắằẳẵặâấầẩẫậẹẻẽêềếểễệỉịọỏôốồổỗộơớờởỡợụủưứừửữựỵỷỹĐđ]+"
@@ -15,6 +15,10 @@ _ALIEN_FILTER = re.compile(
 
 @dataclass
 class ArticleState:
+    """
+    حافظه مرکزی و مدیر وضعیت مقاله.
+    این شیء در کل چرخه حیات مقاله همراه ماست و جلوی تکرار مفاهیم را می‌گیرد.
+    """
     topic: str
     keyword: str
     research_data: dict = field(default_factory=dict)
@@ -36,13 +40,18 @@ class ArticleState:
             "از تکرار کردنِ استدلال‌های قبلی خودداری کن و رو به جلو حرکت کن."
         )
 
+
 def sanitize_html(raw: str) -> str:
+    """پاکسازی HTML با پشتیبانی از تگ‌های غنی و حذف مارک‌دان‌های مزاحم."""
     if not raw:
         return ""
 
     out = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL | re.IGNORECASE)
     out = re.sub(r"\x60{3}html|\x60{3}", "", out, flags=re.IGNORECASE)
+    
+    # حذف کاراکترهای مارک‌دان (مثل ## و ###) که به اشتباه چاپ شده‌اند
     out = re.sub(r"(?m)^#{1,6}\s*", "", out)
+    
     out = _ALIEN_FILTER.sub("", out)
 
     # فیلتر کلمات انگلیسی غیرضروری که معادل فارسی دارند
@@ -66,12 +75,14 @@ def sanitize_html(raw: str) -> str:
 
 
 def fast_seo_scorer(html: str, keyword: str) -> int:
+    """ارزیاب آفلاین، فوق‌سریع و مبتنی بر Constraint برای سئو."""
     soup = BeautifulSoup(html, "html.parser")
     text = soup.get_text(separator=" ", strip=True)
     words = text.split()
     word_count = len(words)
 
     score = 40
+
     h1_tag = soup.find("h1")
     if h1_tag:
         score += 15
@@ -100,6 +111,41 @@ def fast_seo_scorer(html: str, keyword: str) -> int:
 class SEOGenerator:
     def __init__(self, llm: LLMGateway | None = None) -> None:
         self.llm = llm or LLMGateway()
+
+    async def validate_and_deduplicate_facts(self, facts: list[str]) -> list[str]:
+        """
+        فاز ۳: پالایش فکت‌ها
+        حذف تناقضات، ادغام تکرارها و حذف محتوای تبلیغاتی.
+        """
+        if not facts:
+            return []
+            
+        prompt = (
+            "تو یک پژوهشگر و منتقد علمی سخت‌گیر هستی. لیستی از حقایق و جملات خام درباره یک موضوع به تو داده شده است.\n"
+            "وظیفه تو این است که این لیست را پالایش کنی:\n"
+            "۱. حقایق متناقض و غیرعلمی را شناسایی و حذف کن.\n"
+            "۲. حقایق تکراری که یک مفهوم را بیان می‌کنند را ادغام کن و به یک جمله‌ی پرمغز تبدیل کن.\n"
+            "۳. جملات تبلیغاتی، بی‌ارزش یا بی‌ربط را به طور کامل حذف کن.\n"
+            "خروجی منحصراً باید یک آرایه JSON معتبر شامل حقایق پالایش شده به زبان فارسی باشد."
+        )
+        try:
+            raw_json = await self.llm.generate([
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": json.dumps(facts, ensure_ascii=False)}
+            ], json_mode=True)
+            
+            parsed = parse_json_response(raw_json)
+            # اطمینان از اینکه خروجی یک لیست از رشته‌هاست
+            if isinstance(parsed, list):
+                return parsed
+            elif isinstance(parsed, dict):
+                # در صورتی که LLM خروجی را داخل یک کلید دیکشنری گذاشت
+                for val in parsed.values():
+                    if isinstance(val, list):
+                        return val
+            return facts
+        except Exception:
+            return facts
 
     async def generate_outline(self, topic: str, keyword: str, research_data: dict[str, Any]) -> dict[str, Any]:
         headings = research_data.get("headings", [])

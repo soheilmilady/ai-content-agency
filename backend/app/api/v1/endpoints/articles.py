@@ -125,7 +125,11 @@ class ArticlePipeline:
             # ۲. فاز تحقیق
             yield _sse({"step": "researching", "message": "در حال تحقیق زنده..."})
             state.research_data = await self.researcher.research(topic)
-            state.all_facts = self._extract_facts(state.research_data)
+            raw_facts = self._extract_facts(state.research_data)
+            
+            # پاکسازی و اعتبارسنجی فکت‌ها (فاز ۳)
+            yield _sse({"step": "validating_facts", "message": "در حال پالایش و اعتبارسنجی اطلاعات..."})
+            state.all_facts = await self.generator.validate_and_deduplicate_facts(raw_facts)
 
             # ۳. فاز طراحی ساختار (Outline)
             yield _sse({"step": "outlining", "message": "در حال طراحی ساختار..."})
@@ -226,7 +230,9 @@ class ArticlePipeline:
         
         state = ArticleState(topic=topic, keyword=keyword)
         state.research_data = await self.researcher.research(topic)
-        state.all_facts = self._extract_facts(state.research_data)
+        raw_facts = self._extract_facts(state.research_data)
+        state.all_facts = await self.generator.validate_and_deduplicate_facts(raw_facts)
+        
         state.outline = await self.generator.generate_outline(topic, keyword, state.research_data)
         
         sections = state.outline.get("sections", [])
