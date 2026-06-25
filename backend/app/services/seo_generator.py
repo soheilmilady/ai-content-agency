@@ -9,7 +9,7 @@ from app.services.llm_gateway import LLMGateway
 
 _ALIEN_FILTER = re.compile(
     r"[\u0900-\u097F\u4E00-\u9FFF\u3040-\u30FF\u0E00-\u0E7F\u0400-\u04FF\u0500-\u052F"
-    r"ạảăắằẳẵặâấầẩẫậẹẻẽêềếểễệỉịọỏôốồổỗộơớờởỡợụủưứừửữựỵỷỹĐđ]+"
+    r"ạảăắằẳẵặâấầẩẫậẹẻẽêềếểễệỉịọỏôốồổỗộơớờởỡợụủưứừửữựỵỷỹĐđổế]+"
 )
 
 @dataclass
@@ -36,7 +36,6 @@ class ArticleState:
 
 
 def sanitize_html(raw: str, h2_title: str = "") -> str:
-    """پاکسازی HTML با پشتیبانی از تگ‌های غنی و حذف مارک‌دان‌ها و تیترهای اکوشده."""
     if not raw:
         return ""
 
@@ -45,13 +44,12 @@ def sanitize_html(raw: str, h2_title: str = "") -> str:
     out = re.sub(r"(?m)^#{1,6}\s*", "", out)
     out = _ALIEN_FILTER.sub("", out)
 
-    cliches = [r"\bInteraction\b", r"\bnhanh\b", r"\bkéo dài\b"]
+    # پاکسازی کلمات نشت کرده و مارک‌دان‌های مزاحم
+    cliches = [r"\bInteraction\b", r"\bnhanh\b", r"\bkéo dài\b", r"\bphổ biến\b", r"===\s*فکت‌هایِ تأییدشده\s*==="]
     for cliche in cliches:
         out = re.sub(cliche, " ", out, flags=re.IGNORECASE)
 
-    # پادزهر قطعی برای سندروم اکو: اگر تیتر H2 در ابتدای متن تکرار شده بود، آن را پاک کن
     if h2_title:
-        # پاک کردن تیتر اگر دقیقاً با متن شروع شده باشد
         h2_pattern = re.escape(h2_title)
         out = re.sub(rf"^(<p>)?\s*{h2_pattern}\s*(</p>)?\s*", "", out, flags=re.IGNORECASE)
 
@@ -112,12 +110,10 @@ class SEOGenerator:
             return []
             
         prompt = (
-            "تو یک پژوهشگر و منتقد علمی سخت‌گیر هستی. لیستی از حقایق و جملات خام درباره یک موضوع به تو داده شده است.\n"
-            "وظیفه تو این است که این لیست را پالایش کنی:\n"
-            "۱. حقایق متناقض و غیرعلمی را شناسایی و حذف کن.\n"
-            "۲. حقایق تکراری که یک مفهوم را بیان می‌کنند را ادغام کن و به یک جمله‌ی پرمغز تبدیل کن.\n"
-            "۳. جملات تبلیغاتی، بی‌ارزش یا بی‌ربط را به طور کامل حذف کن.\n"
-            "خروجی منحصراً باید یک آرایه JSON معتبر شامل حقایق پالایش شده به زبان فارسی باشد."
+            "تو یک پژوهشگر علمی هستی. لیستی از حقایق خام داده شده است.\n"
+            "۱. حقایق متناقض و غیرعلمی را حذف کن.\n"
+            "۲. حقایق تکراری را ادغام کن.\n"
+            "خروجی منحصراً باید یک آرایه JSON شامل رشته‌های متنی ساده (String) باشد. از ساختنِ Object یا Dictionary خودداری کن."
         )
         try:
             raw_json = await self.llm.generate([
@@ -126,13 +122,25 @@ class SEOGenerator:
             ], json_mode=True)
             
             parsed = parse_json_response(raw_json)
+            clean_facts = []
+            
+            # تبدیلِ اجباریِ خروجی به رشته‌ی متنیِ خالص (برای جلوگیری از چاپ شدن دیکشنری در فرانت‌اند)
             if isinstance(parsed, list):
-                return parsed
+                for item in parsed:
+                    if isinstance(item, str):
+                        clean_facts.append(item)
+                    elif isinstance(item, dict):
+                        clean_facts.append(item.get('محتوا', item.get('content', str(item))))
             elif isinstance(parsed, dict):
                 for val in parsed.values():
                     if isinstance(val, list):
-                        return val
-            return facts
+                        for item in val:
+                            if isinstance(item, str):
+                                clean_facts.append(item)
+                            elif isinstance(item, dict):
+                                clean_facts.append(item.get('محتوا', item.get('content', str(item))))
+                                
+            return clean_facts if clean_facts else facts
         except Exception:
             return facts
 
@@ -233,7 +241,7 @@ class SEOGenerator:
         if len(section_facts) == 0:
             facts_instruction = (
                 "⚠️ قانون: از آنجا که دیتای اختصاصی برای این بخش یافت نشد، منحصراً به مفاهیمِ پایه‌یِ صنعت تکیه کن. "
-                "تحت هیچ شرایطی آمار، نام‌ها یا ادعاهای قطعی تخیل نکن."
+                "تحت هیچ شرایطی آمار، نام‌ها یا ادعاهای قطعی تخیل نکن. از ربط دادن موضوعات نامربوط (مثل چای سبز) اکیداً خودداری کن."
             )
             facts_str = "داده‌یِ اختصاصی وجود ندارد."
         else:
@@ -241,7 +249,8 @@ class SEOGenerator:
                 "قانونِ استناد (Grounding): منحصراً از فکت‌هایِ بالا به عنوان مواد خامِ علمی استفاده کن. "
                 "تخیل کردنِ آمار و ارقام مطلقاً ممنوع است."
             )
-            facts_str = "\n".join(f"• {f}" for f in section_facts[:6])
+            # فقط استرینگ‌های خالص را ارسال می‌کنیم
+            facts_str = "\n".join(f"• {f}" for f in section_facts[:6] if isinstance(f, str))
 
         h3_str = "، ".join(h3_list) if h3_list else "ندارد"
         lsi_str = "، ".join(lsi_keywords[:5])
@@ -257,10 +266,10 @@ class SEOGenerator:
                 "content": (
                     f"تو یک روزنامه‌نگار تحلیلی و کارشناس سئو در حوزه «{keyword}» هستی.\n"
                     "قوانینِ معماری و نگارش:\n"
-                    "۱. کلمات عمومی منحصراً باید به زبان فارسی معیار نوشته شوند. استفاده از کلمات بیگانه غیرضروری در بین متن فارسی اکیداً ممنوع است.\n"
+                    "۱. کلمات عمومی منحصراً باید به زبان فارسی معیار نوشته شوند. استفاده از زبان‌های ویتنامی، عربی و غیره اکیداً ممنوع است.\n"
                     "۲. کلمه کلیدی را ۱ یا ۲ بار در متن کاملاً طبیعی استفاده کن.\n"
-                    "۳. تحت هیچ شرایطی عنوان H2 را در خط اول متنت کپی و تکرار نکن! مستقیماً وارد تولید محتوا شو.\n"
-                    "۴. به هیچ‌وجه یک جمله را در یک پاراگراف دو بار تکرار نکن (پرهیز از ساختارهای حلقوی).\n"
+                    "۳. تحت هیچ شرایطی عنوان H2 را در خط اول متنت کپی نکن.\n"
+                    "۴. تحت هیچ شرایطی کلمه «فکت‌های تأییدشده» یا داده‌های خام جیسون را در متن خروجی چاپ نکن! تو فقط باید مقاله را بنویسی.\n"
                     "۵. حتماً جمله‌ی آخر را با نقطه (.) ببند و متن را در میانه رها نکن.\n"
                     "۶. خروجی منحصراً HTML با تگ‌های مجاز است. نوشتنِ کاراکترهای مارک‌دان مثل ## ممنوع است."
                 ),
@@ -281,7 +290,7 @@ class SEOGenerator:
                     f"کلمه کلیدیِ هدف: {keyword}\n"
                     f"کلماتِ مرتبط سئو (LSI): {lsi_str}\n"
                     f"{glossary_note}\n\n"
-                    "بدون تکرارِ عنوانِ این بخش، مستقیماً پاراگرافِ اول را با نثری روان و پرمحتوا آغاز کن."
+                    "مستقیماً پاراگرافِ اول مقاله را با نثری روان و پرمحتوا آغاز کن."
                 ),
             },
         ]
@@ -292,7 +301,6 @@ class SEOGenerator:
 
     async def draft_section(self, *args, **kwargs) -> str:
         accumulated_html = ""
-        # استخراج h2_title از kwargs برای پاس دادن به سینیتایزر
         h2_title = kwargs.get("h2_title", "")
         async for chunk in self.draft_section_stream(*args, **kwargs):
             accumulated_html += chunk
