@@ -1,5 +1,6 @@
 import json
 import re
+from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator
 from bs4 import BeautifulSoup
 
@@ -11,14 +12,47 @@ _ALIEN_FILTER = re.compile(
     r"[\u0900-\u097F\u4E00-\u9FFF\u3040-\u30FF\u0E00-\u0E7F\u0400-\u04FF\u0500-\u052F]+"
 )
 
+@dataclass
+class ArticleState:
+    """
+    حافظه مرکزی و مدیر وضعیت مقاله.
+    این شیء در کل چرخه حیات مقاله همراه ماست و جلوی تکرار مفاهیم را می‌گیرد.
+    """
+    topic: str
+    keyword: str
+    research_data: dict = field(default_factory=dict)
+    all_facts: list[str] = field(default_factory=list)
+    outline: dict = field(default_factory=dict)
+    facts_map: dict = field(default_factory=dict)
+    sections_html: list[str] = field(default_factory=list)
+    completed_theses: list[str] = field(default_factory=list)
+    
+    def get_narrative_memory(self) -> str:
+        if not self.completed_theses:
+            return "این اولین بخش مقاله است. یک شروع جذاب بنویس و مستقیماً وارد بحث اصلی شو."
+        
+        # استخراج مفاهیم گفته شده در بخش‌های قبل به جای کلمات خام
+        memory = " | ".join(self.completed_theses)
+        return (
+            f"⚠️ توجه بسیار مهم: مفاهیم و نتیجه‌گیری‌های زیر در بخش‌های قبلی مقاله به طور کامل بیان شده‌اند:\n"
+            f"[{memory}]\n\n"
+            "قانونِ عدم تکرارِ مفهومی: به هیچ وجه استدلال‌ها، نتیجه‌گیری‌ها یا مقدمه‌های بالا را در این بخش تکرار نکن. "
+            "نیازی نیست برای جلوگیری از تکرار، به دنبال مترادف‌های عجیب بگردی! راه حل درست این است که "
+            "مستقیماً و منحصراً درباره‌ی دیتایِ جدیدِ همین تیتر صحبت کنی."
+        )
+
 
 def sanitize_html(raw: str) -> str:
-    """پاکسازی HTML با پشتیبانی از تگ‌های غنی (جدول، نقل‌قول، لیست)."""
+    """پاکسازی HTML با پشتیبانی از تگ‌های غنی و حذف مارک‌دان‌های مزاحم."""
     if not raw:
         return ""
 
     out = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL | re.IGNORECASE)
     out = re.sub(r"\x60{3}html|\x60{3}", "", out, flags=re.IGNORECASE)
+    
+    # حذف کاراکترهای مارک‌دان (مثل ## و ###) که به اشتباه چاپ شده‌اند
+    out = re.sub(r"(?m)^#{1,6}\s*", "", out)
+    
     out = _ALIEN_FILTER.sub("", out)
 
     soup = BeautifulSoup(out, "html.parser")
@@ -36,50 +70,24 @@ def sanitize_html(raw: str) -> str:
     return out.strip()
 
 
-def generate_rolling_memory(html_history: str) -> str:
-    """حافظه‌ی روایی: ۱۵۰ کلمه‌ی آخر مقاله را استخراج می‌کند."""
-    if not html_history or not html_history.strip():
-        return "این اولین بخش مقاله است. یک مقدمه‌ی جذاب و گیرا بنویس."
-
-    soup = BeautifulSoup(html_history, "html.parser")
-    text = soup.get_text(separator=" ", strip=True)
-    words = text.split()
-
-    if len(words) > 150:
-        memory = " ".join(words[-150:])
-    else:
-        memory = text
-
-    return (
-        f"پایانِ بخش قبلی این‌گونه بود:\n«...{memory}»\n"
-        "(متن این بخش را طوری شروع کن که ادامه‌ی منطقی و روانِ این جملات باشد و هیچ حرفی را تکرار نکند)."
-    )
-
-
 def fast_seo_scorer(html: str, keyword: str) -> int:
-    """
-    جایگزین فوق‌سریع برای SEOCritic:
-    بدون مصرف توکن LLM، مقاله را از نظر استانداردهای ساختاری و چگالی سئو ارزیابی می‌کند.
-    """
+    """ارزیاب آفلاین، فوق‌سریع و مبتنی بر Constraint برای سئو."""
     soup = BeautifulSoup(html, "html.parser")
     text = soup.get_text(separator=" ", strip=True)
     words = text.split()
     word_count = len(words)
 
-    score = 40  # امتیاز پایه
+    score = 40
 
-    # ۱. بررسی H1
     h1_tag = soup.find("h1")
     if h1_tag:
         score += 15
         if keyword in h1_tag.get_text():
             score += 10
 
-    # ۲. بررسی حضور H2
     if soup.find("h2"):
         score += 10
 
-    # ۳. چگالی کلمه کلیدی (ایده‌آل: بین ۰.۵ تا ۲.۵ درصد)
     kw_count = text.count(keyword)
     if word_count > 0:
         density = (kw_count / word_count) * 100
@@ -88,7 +96,6 @@ def fast_seo_scorer(html: str, keyword: str) -> int:
         elif density > 0:
             score += 5
 
-    # ۴. ارزیابی طول محتوا
     if word_count > 800:
         score += 10
     elif word_count > 400:
@@ -194,14 +201,11 @@ class SEOGenerator:
         section_facts: list[str],
         narrative_memory: str = "",
     ) -> AsyncGenerator[str, None]:
-        """
-        تولید متنِ بخش با خروجی Stream (توکن به توکن).
-        این متد استریم واقعی را برای رابط کاربری فراهم می‌کند.
-        """
+        
         if len(section_facts) == 0:
             facts_instruction = (
                 "⚠️ هشدار: فکتِ مستندی برای این بخش یافت نشد.\n"
-                "قانون: این بخش را کوتاه بنویس و منحصراً به بدیهیاتِ اثبات‌شده‌ی این صنعت تکیه کن. "
+                "قانون: این بخش را بسیار کوتاه بنویس و منحصراً به بدیهیاتِ اثبات‌شده‌ی این صنعت تکیه کن. "
                 "تحت هیچ شرایطی آمار، نام شرکت‌ها یا ادعاهای قطعی تخیل نکن."
             )
             facts_str = "داده‌یِ اختصاصی وجود ندارد. به مفاهیم پایه‌یِ صنعت تکیه کن."
@@ -224,13 +228,14 @@ class SEOGenerator:
             {
                 "role": "system",
                 "content": (
-                    f"تو یک متخصصِ محتوایِ B2B و کارشناس سئو (SEO) در حوزه «{keyword}» هستی.\n"
-                    "قوانینِ معماری و سئو:\n"
+                    f"تو یک متخصصِ محتوایِ B2B و کارشناس سئو در حوزه «{keyword}» هستی.\n"
+                    "قوانینِ معماری و نگارش:\n"
                     "۱. کلمه کلیدی را ۱ یا ۲ بار در متن کاملاً طبیعی استفاده کن.\n"
-                    "۲. کلمات انگلیسی تخصصی مجاز هستند.\n"
-                    "۳. عنوان H2 را در خط اول پاراگراف تکرار نکن.\n"
-                    "۴. از تکرار ساختارها و تولید جملات رباتیک و جمع‌بندی‌های کلیشه‌ای بپرهیز.\n"
-                    "۵. خروجی فقط HTML با تگ‌های مجاز است."
+                    "۲. عنوان H2 را در خط اول پاراگراف تکرار نکن.\n"
+                    "۳. برای جلوگیری از سکته‌های گرامری، طول جملات را استاندارد نگه دار (پرهیز از افعال مرکب پی‌درپی).\n"
+                    "۴. متن را با یک نتیجه‌گیریِ بیهوده تمام نکن. مستقیماً در قلبِ موضوع توقف کن.\n"
+                    "۵. حتماً جمله‌ی آخر را با نقطه (.) ببند و متن را نیمه‌کاره رها نکن.\n"
+                    "۶. خروجی فقط تگ‌های مجاز HTML است. از نوشتنِ کاراکترهای مارک‌دان مثل ## خودداری کن."
                 ),
             },
             {
@@ -249,7 +254,7 @@ class SEOGenerator:
                     f"کلمه کلیدیِ هدف: {keyword}\n"
                     f"کلماتِ مرتبط سئو (LSI): {lsi_str}\n"
                     f"{glossary_note}\n\n"
-                    "متنِ این بخش را با نثری فاخر، تحلیلی و انسانی بنویس."
+                    "متنِ این بخش را با نثری فاخر و تحلیلی بنویس."
                 ),
             },
         ]
@@ -259,7 +264,6 @@ class SEOGenerator:
             yield chunk
 
     async def draft_section(self, *args, **kwargs) -> str:
-        """نسخه Wrapper برای مواقعی که استریم لازم نیست (مثل فراخوانی‌های عادی)."""
         accumulated_html = ""
         async for chunk in self.draft_section_stream(*args, **kwargs):
             accumulated_html += chunk
