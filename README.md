@@ -66,11 +66,7 @@ docker-compose up -d
 | Swagger Docs | http://localhost:8000/docs |
 | Health Check | http://localhost:8000/health |
 
-**ورود پیش‌فرض ادمین:**
-
-- ایمیل: `admin@agency.com`
-- رمز: `Admin1234!`
-
+**ور
 > **نکته:** برای درخواست‌های مرورگر، در production مقدار `NEXT_PUBLIC_API_URL` باید از دید کلاینت قابل دسترس باشد (مثلاً `http://localhost:8000/api/v1`). در صورت نیاز، هنگام build فرانت‌اند این متغیر را تنظیم کنید.
 
 ---
