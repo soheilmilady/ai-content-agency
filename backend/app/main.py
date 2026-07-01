@@ -49,8 +49,11 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         from app.models.setting import SystemSetting
+        import app.core.limiter as limiter_module
         limit_setting = db.query(SystemSetting).filter(SystemSetting.key == "global_daily_rate_limit").first()
-        app.state.global_limit = limit_setting.value if limit_setting else "20/day"
+        if limit_setting:
+            limiter_module.GLOBAL_DAILY_LIMIT = limit_setting.value
+        app.state.global_limit = limiter_module.GLOBAL_DAILY_LIMIT
     finally:
         db.close()
         
