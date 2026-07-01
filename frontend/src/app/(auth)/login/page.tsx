@@ -32,10 +32,13 @@ export default function LoginPage() {
 
     try {
       const { access_token } = await login(email, password);
-      Cookies.set("auth_token", access_token, { expires: 1 });
+      const isSecure = window.location.protocol === "https:";
+      Cookies.set("auth_token", access_token, { expires: 1, secure: isSecure, sameSite: 'strict' });
       router.push("/dashboard");
-    } catch {
-      setError("ایمیل یا رمز عبور اشتباه است. لطفاً دوباره تلاش کنید.");
+    } catch (err) {
+      const axiosError = err as { response?: { data?: { detail?: string | string[] } } };
+      const message = axiosError.response?.data?.detail || "ایمیل یا رمز عبور اشتباه است. لطفاً دوباره تلاش کنید.";
+      setError(typeof message === 'string' ? message : JSON.stringify(message));
     } finally {
       setLoading(false);
     }

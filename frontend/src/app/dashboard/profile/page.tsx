@@ -20,6 +20,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [originalUser, setOriginalUser] = useState<{email: string, username: string} | null>(null);
 
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
@@ -32,6 +33,7 @@ export default function ProfilePage() {
       .then((user) => {
         setEmail(user.email);
         setUsername(user.username);
+        setOriginalUser({ email: user.email, username: user.username });
       })
       .finally(() => setLoading(false));
   }, []);
@@ -51,15 +53,32 @@ export default function ProfilePage() {
       return;
     }
 
+    const payload: { email?: string; username?: string; current_password?: string; new_password?: string } = {};
+    if (email !== originalUser?.email) {
+      if (!currentPassword) {
+        setError("برای تغییر ایمیل، رمز فعلی را وارد کنید.");
+        return;
+      }
+      payload.email = email;
+    }
+    if (username !== originalUser?.username) payload.username = username;
+    
+    if (newPassword) {
+      payload.current_password = currentPassword;
+      payload.new_password = newPassword;
+    } else if (payload.email) {
+      payload.current_password = currentPassword;
+    }
+
+    if (Object.keys(payload).length === 0) {
+      setMessage("تغییری برای ذخیره وجود ندارد.");
+      return;
+    }
+
     setSaving(true);
 
     try {
-      await updateProfile({
-        email,
-        username,
-        current_password: currentPassword || undefined,
-        new_password: newPassword || undefined,
-      });
+      await updateProfile(payload);
       setMessage("اطلاعات حساب کاربری با موفقیت به‌روزرسانی شد.");
       setCurrentPassword("");
       setNewPassword("");

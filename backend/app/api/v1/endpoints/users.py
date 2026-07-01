@@ -112,5 +112,7 @@ def delete_user(
             detail="User not found",
         )
 
-    db.delete(user)
+    user.is_active = False
+    user.email = f"deleted_{user.id}_{user.email}"
+    user.username = f"deleted_{user.id}_{user.username}"
     db.commit()

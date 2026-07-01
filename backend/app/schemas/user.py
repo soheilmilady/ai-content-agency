@@ -1,13 +1,14 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from typing import Literal
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class UserCreate(BaseModel):
     email: EmailStr
     username: str
-    password: str
-    role: str = "writer"
+    password: str = Field(min_length=8)
+    role: Literal["admin", "editor", "writer"] = "writer"
 
 
 class UserLogin(BaseModel):
@@ -34,7 +35,7 @@ class Token(BaseModel):
 class UserUpdate(BaseModel):
     email: EmailStr | None = None
     username: str | None = None
-    role: str | None = None
+    role: Literal["admin", "editor", "writer"] | None = None
     is_active: bool | None = None
 
 
@@ -42,4 +43,4 @@ class ProfileUpdate(BaseModel):
     email: EmailStr | None = None
     username: str | None = None
     current_password: str | None = None
-    new_password: str | None = None
+    new_password: str | None = Field(default=None, min_length=8)

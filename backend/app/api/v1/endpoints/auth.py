@@ -1,20 +1,23 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
+from app.core.limiter import limiter
 
 from app.api.v1.deps import get_current_user, get_db
 from app.core.security import create_token, hash_password, verify_password
 from app.models.user import User
-from app.schemas.user import ProfileUpdate, Token, UserLogin, UserResponse
+from app.schemas.user import ProfileUpdate, Token, UserResponse
+from fastapi.security import OAuth2PasswordRequestForm
 
 router = APIRouter()
 
 
 @router.post("/auth/login", response_model=Token)
-def login(body: UserLogin, db: Annotated[Session, Depends(get_db)]):
-    user = db.query(User).filter(User.email == body.email).first()
-    if user is None or not verify_password(body.password, user.hashed_password):
+@limiter.limit("10/minute")
+def login(request: Request, form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db: Annotated[Session, Depends(get_db)]):
+    user = db.query(User).filter(User.email == form_data.username).first()
+    if user is None or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",

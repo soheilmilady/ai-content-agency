@@ -7,6 +7,11 @@ from app.core.config import settings
 class WebResearcher:
     async def research(self, topic: str) -> dict:
         empty = {"urls": [], "headings": [], "keywords": [], "snippets": []}
+        if not getattr(settings, "SERPER_API_KEY", None):
+            import logging
+            logging.getLogger(__name__).warning("SERPER_API_KEY not set, skipping web research.")
+            return empty
+
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
 
@@ -106,5 +111,13 @@ class WebResearcher:
                     "snippets": all_snippets,
                 }
 
-        except Exception:
+        except httpx.HTTPError as exc:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Network error during web research: {exc}")
+            return empty
+        except Exception as exc:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Unexpected error in web research: {exc}", exc_info=True)
             return empty

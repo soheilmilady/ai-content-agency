@@ -6,16 +6,18 @@ from collections.abc import AsyncGenerator
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user, get_db
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.models.article import Article
 from app.models.user import User
 from app.schemas.article import (
     ArticleResponse,
+    ArticleListResponse,
     ArticleUpdate,
     GenerateRequest,
     PublishRequest,
@@ -270,7 +272,9 @@ class ArticlePipeline:
 # ─────────────────────────────────────────────
 
 @router.post("/articles/generate-stream")
+@limiter.limit("20/day")
 async def generate_stream_post(
+    request: Request,
     body: GenerateRequest,
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
@@ -282,12 +286,13 @@ async def generate_stream_post(
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
-            "Access-Control-Allow-Origin": "*",
         },
     )
 
 @router.get("/articles/generate-stream")
+@limiter.limit("20/day")
 async def generate_stream_get(
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
     topic: str = Query(...),
@@ -302,7 +307,9 @@ async def generate_stream_get(
     )
 
 @router.post("/articles/generate", response_model=ArticleResponse)
+@limiter.limit("20/day")
 async def generate_no_stream(
+    request: Request,
     body: GenerateRequest,
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
@@ -316,7 +323,7 @@ async def generate_no_stream(
         logger.error(f"Generation error: {exc}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="خطای داخلی در تولید محتوا.")
 
-@router.get("/articles", response_model=list[ArticleResponse])
+@router.get("/articles", response_model=list[ArticleListResponse])
 def list_articles(db: Annotated[Session, Depends(get_db)], current_user: Annotated[User, Depends(get_current_user)]):
     query = db.query(Article)
     if not _can_view_all(current_user):
@@ -340,7 +347,19 @@ def update_article(article_id: int, body: ArticleUpdate, db: Annotated[Session, 
     if not _can_access(current_user, article):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="دسترسی ندارید.")
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    update_data = body.model_dump(exclude_unset=True)
+    
+    # 1. Mass Assignment Prevention: Status
+    if "status" in update_data:
+        if current_user.role not in ("admin", "editor"):
+            if update_data["status"] not in ("draft", "pending_approval"):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot publish this article directly.")
+
+    # 2. XSS Prevention: Sanitize stored HTML
+    if "content_html" in update_data and update_data["content_html"]:
+        update_data["content_html"] = sanitize_html(update_data["content_html"])
+
+    for field, value in update_data.items():
         setattr(article, field, value)
 
     db.commit()
@@ -358,6 +377,20 @@ def delete_article(article_id: int, db: Annotated[Session, Depends(get_db)], cur
     db.delete(article)
     db.commit()
 
+@router.post("/articles/{article_id}/approve", response_model=ArticleResponse)
+def approve_article(article_id: int, db: Annotated[Session, Depends(get_db)], current_user: Annotated[User, Depends(get_current_user)]):
+    if current_user.role not in ("admin", "editor"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="فقط ادمین و ویراستار می‌توانند مقاله را تایید کنند.")
+        
+    article = db.query(Article).filter(Article.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مقاله یافت نشد.")
+        
+    article.status = "approved"
+    db.commit()
+    db.refresh(article)
+    return article
+
 @router.post("/articles/{article_id}/publish", response_model=ArticleResponse)
 async def publish_article(article_id: int, body: PublishRequest, db: Annotated[Session, Depends(get_db)], current_user: Annotated[User, Depends(get_current_user)]):
     if not _can_publish(current_user):
@@ -369,8 +402,8 @@ async def publish_article(article_id: int, body: PublishRequest, db: Annotated[S
     if not _can_access(current_user, article):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="دسترسی ندارید.")
 
-    if article.status == "published" and article.wp_post_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"این مقاله قبلاً در وردپرس منتشر شده. شناسه پست: {article.wp_post_id}")
+    if article.status != "approved":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="فقط مقالاتی که تأیید شده‌اند (approved) قابل انتشار هستند.")
 
     wp_url = body.wp_url or getattr(settings, "WP_URL", "")
     wp_username = body.wp_username or getattr(settings, "WP_USERNAME", "")

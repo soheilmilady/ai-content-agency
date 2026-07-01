@@ -2,25 +2,34 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.api.v1.endpoints.auth import router as auth_router
 from app.api.v1.endpoints.articles import router as articles_router
 from app.api.v1.endpoints.users import router as users_router
 from app.core.security import hash_password
+from app.core.config import settings
 from app.db.session import Base, SessionLocal, engine
 from app.models import User
+from app.core.limiter import limiter
 
 
 def seed_admin() -> None:
-    """Bootstrap default admin: email=admin@agency.com, password=Admin1234!"""
+    """Bootstrap default admin from env vars safely."""
+    admin_email = getattr(settings, "BOOTSTRAP_ADMIN_EMAIL", None)
+    admin_password = getattr(settings, "BOOTSTRAP_ADMIN_PASSWORD", None)
+    if not admin_email or not admin_password:
+        return
+        
     db = SessionLocal()
     try:
-        admin = db.query(User).filter(User.email == "admin@agency.com").first()
+        admin = db.query(User).filter(User.email == admin_email).first()
         if admin is None:
             admin = User(
                 username="admin",
-                email="admin@agency.com",
-                hashed_password=hash_password("Admin1234!"),
+                email=admin_email,
+                hashed_password=hash_password(admin_password),
                 role="admin",
                 is_active=True,
             )
@@ -32,20 +41,20 @@ def seed_admin() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    # Base.metadata.create_all(bind=engine)  # Use Alembic instead
     seed_admin()
     yield
 
 
 app = FastAPI(title="AI Content Agency", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "https://ai-content-agency-vjbd.vercel.app",
-        "https://ai-content-agency-vjbd-gz8r0qc1o-soheilmiladys-projects.vercel.app",
-        "https://*.vercel.app",
+        "https://ai-content-agency.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],

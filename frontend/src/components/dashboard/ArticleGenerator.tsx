@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Cookies from "js-cookie";
 import { Loader2, Sparkles } from "lucide-react";
+import DOMPurify from "dompurify";
 
 import TipTapEditor from "@/components/editor/TipTapEditor";
 import { Badge } from "@/components/ui/badge";
@@ -216,8 +217,10 @@ export default function ArticleGenerator() {
         status: "draft",
       });
       setActionMessage("پیش‌نویس با موفقیت ذخیره شد.");
-    } catch {
-      setError("ذخیره پیش‌نویس با خطا مواجه شد.");
+    } catch (err) {
+      const axiosError = err as { response?: { data?: { detail?: string | string[] } } };
+      const msg = axiosError.response?.data?.detail || "ذخیره پیش‌نویس با خطا مواجه شد.";
+      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
     } finally {
       setSaving(false);
     }
@@ -234,8 +237,10 @@ export default function ArticleGenerator() {
       await updateArticle(articleId, { content_html: editorContent });
       await publishArticle(articleId);
       setActionMessage("مقاله با موفقیت در وردپرس منتشر شد.");
-    } catch {
-      setError("انتشار مقاله با خطا مواجه شد. تنظیمات وردپرس را بررسی کنید.");
+    } catch (err) {
+      const axiosError = err as { response?: { data?: { detail?: string | string[] } } };
+      const msg = axiosError.response?.data?.detail || "انتشار مقاله با خطا مواجه شد. تنظیمات وردپرس را بررسی کنید.";
+      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
     } finally {
       setPublishing(false);
     }
@@ -347,7 +352,7 @@ export default function ArticleGenerator() {
               <div className="max-h-80 overflow-y-auto rounded-lg border border-border bg-muted p-4">
                 <div
                   className="tiptap text-right"
-                  dangerouslySetInnerHTML={{ __html: streamedContent }}
+                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(streamedContent) }}
                 />
                 <span className="mr-1 inline-block h-5 w-0.5 animate-pulse bg-indigo-600" />
               </div>

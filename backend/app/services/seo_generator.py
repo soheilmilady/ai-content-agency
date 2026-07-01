@@ -55,7 +55,7 @@ def sanitize_html(raw: str, h2_title: str = "") -> str:
 
     soup = BeautifulSoup(out, "html.parser")
     valid_tags = {
-        "p", "h3", "h4", "ul", "ol", "li", "strong", "em", "br",
+        "p", "h1", "h2", "h3", "h4", "ul", "ol", "li", "strong", "em", "br",
         "table", "thead", "tbody", "tr", "th", "td", "blockquote"
     }
     for tag in soup.find_all(True):

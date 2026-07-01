@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -18,7 +19,18 @@ class ArticleResponse(BaseModel):
     meta_description: str
     focus_keyword: str
     seo_score: int
-    status: str
+    status: Literal["draft", "pending_approval", "approved", "published", "archived"]
+    created_at: datetime
+
+
+class ArticleListResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    focus_keyword: str
+    seo_score: int
+    status: Literal["draft", "pending_approval", "approved", "published", "archived"]
     created_at: datetime
 
 
@@ -32,4 +44,4 @@ class ArticleUpdate(BaseModel):
     title: str | None = None
     content_html: str | None = None
     meta_description: str | None = None
-    status: str | None = None
+    status: Literal["draft", "pending_approval", "approved", "published", "archived"] | None = None

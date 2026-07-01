@@ -76,9 +76,14 @@ export async function login(
   email: string,
   password: string
 ): Promise<{ access_token: string }> {
+  const params = new URLSearchParams();
+  params.append("username", email);
+  params.append("password", password);
+  
   const { data } = await api.post<{ access_token: string; token_type: string }>(
     "/auth/login",
-    { email, password }
+    params,
+    { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
   );
   return { access_token: data.access_token };
 }
@@ -140,6 +145,11 @@ export async function getArticles(): Promise<Article[]> {
 
 export async function publishArticle(id: number): Promise<Article> {
   const { data } = await api.post<Article>(`/articles/${id}/publish`, {});
+  return data;
+}
+
+export async function approveArticle(id: number): Promise<Article> {
+  const { data } = await api.post<Article>(`/articles/${id}/approve`, {});
   return data;
 }
 

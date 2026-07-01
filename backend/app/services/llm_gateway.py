@@ -3,7 +3,9 @@ import json
 from collections.abc import AsyncGenerator
 
 import litellm
+from litellm import acompletion
 from litellm.exceptions import RateLimitError
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
 
@@ -92,7 +94,7 @@ class LLMGateway:
         for attempt in range(max_attempts + 1):
             try:
                 await asyncio.sleep(1.2)
-                response = await litellm.acompletion(
+                response = await acompletion(
                     **self._completion_kwargs(
                         active_model, messages, False, json_mode, allocated_ceiling
                     )
@@ -117,7 +119,7 @@ class LLMGateway:
                             active_model = self.fallback_model
                             await asyncio.sleep(4.0)
                             try:
-                                fallback_res = await litellm.acompletion(
+                                fallback_res = await acompletion(
                                     **self._completion_kwargs(
                                         active_model,
                                         messages,
@@ -140,6 +142,7 @@ class LLMGateway:
                 raise _friendly_llm_error(active_model, exc) from exc
 
         return ""
+
 
     async def _stream(
         self, messages: list[dict], json_mode: bool
@@ -181,5 +184,8 @@ class LLMGateway:
                 delta = chunk.choices[0].delta.content
                 if delta:
                     yield delta
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error during LLM streaming: {exc}", exc_info=True)
+            raise

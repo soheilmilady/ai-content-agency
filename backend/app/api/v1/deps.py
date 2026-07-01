@@ -3,7 +3,8 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import InvalidTokenError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -34,7 +35,7 @@ def get_current_user(
         if sub is None:
             raise credentials_exception
         user_id = int(sub)
-    except (JWTError, ValueError):
+    except (InvalidTokenError, ValueError):
         raise credentials_exception
 
     user = db.query(User).filter(User.id == user_id).first()

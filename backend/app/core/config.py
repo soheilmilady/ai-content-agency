@@ -5,9 +5,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     DATABASE_URL: str = "sqlite:///./app.db"
-    SECRET_KEY: str = "change-me-in-production"
+    SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
+    BOOTSTRAP_ADMIN_EMAIL: str | None = None
+    BOOTSTRAP_ADMIN_PASSWORD: str | None = None
     GROQ_API_KEY: str = ""
     SERPER_API_KEY: str = ""
     WP_URL: str = ""
