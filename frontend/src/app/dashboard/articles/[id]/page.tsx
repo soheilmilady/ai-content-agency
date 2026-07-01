@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, Save, Wand2, Users } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -18,9 +18,8 @@ import {
   type User,
 } from "@/lib/api";
 
-export default function ArticleDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
-  const articleId = parseInt(resolvedParams.id, 10);
+export default function ArticleDetailPage({ params }: { params: { id: string } }) {
+  const articleId = parseInt(params.id, 10);
 
   const [article, setArticle] = useState<Article | null>(null);
   const [me, setMe] = useState<User | null>(null);
