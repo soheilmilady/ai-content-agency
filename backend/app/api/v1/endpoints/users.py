@@ -16,7 +16,7 @@ def list_users(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[User, Depends(require_admin)],
 ):
-    return db.query(User).all()
+    return db.query(User).filter(User.is_active == True).all()
 
 
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
