@@ -21,5 +21,5 @@ class User(Base):
     articles = relationship(
         "Article",
         back_populates="author",
-        foreign_keys="[Article.author_id]",
+        primaryjoin="User.id == Article.author_id",
     )
