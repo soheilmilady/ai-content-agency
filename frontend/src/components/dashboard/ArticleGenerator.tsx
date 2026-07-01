@@ -143,6 +143,9 @@ export default function ArticleGenerator() {
       });
 
       if (!response.ok) {
+        if (response.status === 429) {
+          throw new Error("سقف درخواست‌های روزانه پر شده است. لطفاً فردا تلاش کنید.");
+        }
         throw new Error("خطا در شروع تولید محتوا");
       }
 

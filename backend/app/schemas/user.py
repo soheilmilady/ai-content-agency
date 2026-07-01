@@ -23,6 +23,7 @@ class UserResponse(BaseModel):
     email: str
     username: str
     role: str
+    can_publish: bool
     is_active: bool
     created_at: datetime
 
@@ -36,6 +37,7 @@ class UserUpdate(BaseModel):
     email: EmailStr | None = None
     username: str | None = None
     role: Literal["admin", "editor", "writer"] | None = None
+    can_publish: bool | None = None
     is_active: bool | None = None
 
 

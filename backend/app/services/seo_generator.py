@@ -136,13 +136,35 @@ class SEOGenerator:
                     if isinstance(val, list):
                         for item in val:
                             if isinstance(item, str):
-                                clean_facts.append(item)
-                            elif isinstance(item, dict):
                                 clean_facts.append(item.get('محتوا', item.get('content', str(item))))
-                                
-            return clean_facts if clean_facts else facts
+            return [str(f) for f in clean_facts if f]
         except Exception:
             return facts
+
+    async def improve_article_html(self, html: str, instruction: str | None) -> str:
+        if instruction:
+            prompt = (
+                "تو یک ویراستار و متخصص سئو هستی.\n"
+                f"دستورالعمل کاربر برای اصلاح مقاله: {instruction}\n"
+                "با حفظ ساختار تگ‌های HTML (مثل h1, h2, p, strong)، متن را مطابق با دستورالعمل بهبود بده.\n"
+                "خروجی تو باید منحصراً و فقط کدهای HTML باشد. هیچ توضیح اضافه‌ای نده."
+            )
+        else:
+            prompt = (
+                "تو یک ویراستار و متخصص سئو هستی.\n"
+                "این مقاله را به طور کامل از جوانب سئو، نگارش، رفع پرش زبانی و صحت‌سنجی اطلاعات بررسی و اصلاح کن.\n"
+                "با حفظ ساختار تگ‌های HTML (مثل h1, h2, p, strong)، متن را حرفه‌ای‌تر، روان‌تر و بهینه‌تر بنویس.\n"
+                "کلمات کلیدی اصلی را در صورت نیاز اضافه کن. خروجی تو باید منحصراً کدهای HTML باشد."
+            )
+        
+        try:
+            raw_response = await self.llm.generate([
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": html}
+            ])
+            return sanitize_html(raw_response)
+        except Exception as e:
+            return html
 
     async def generate_outline(self, topic: str, keyword: str, research_data: dict[str, Any]) -> dict[str, Any]:
         headings = research_data.get("headings", [])

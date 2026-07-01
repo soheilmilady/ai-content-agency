@@ -5,14 +5,21 @@ import Link from "next/link";
 import { FileText, Plus, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { getArticles, approveArticle, publishArticle, type Article } from "@/lib/api";
+import { getArticles, approveArticle, publishArticle, deleteArticle, getMe, type Article, type User } from "@/lib/api";
 
 export default function ArticlesPage() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [me, setMe] = useState<User | null>(null);
 
   useEffect(() => {
+    getMe().then(setMe).catch(() => {});
+    loadArticles();
+  }, []);
+
+  const loadArticles = () => {
+    setLoading(true);
     getArticles()
       .then(setArticles)
       .catch((err) => {
@@ -20,7 +27,7 @@ export default function ArticlesPage() {
         console.error(err);
       })
       .finally(() => setLoading(false));
-  }, []);
+  };
 
   const handleApprove = async (id: number) => {
     try {
@@ -42,6 +49,19 @@ export default function ArticlesPage() {
     } catch (err) {
       const axiosError = err as { response?: { data?: { detail?: string | string[] } } };
       const msg = axiosError.response?.data?.detail || "خطا در انتشار مقاله";
+      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm("آیا از حذف مقاله مطمئن هستید؟")) return;
+    try {
+      setError("");
+      await deleteArticle(id);
+      setArticles(articles.filter(a => a.id !== id));
+    } catch (err) {
+      const axiosError = err as { response?: { data?: { detail?: string | string[] } } };
+      const msg = axiosError.response?.data?.detail || "خطا در حذف مقاله";
       setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
     }
   };
@@ -105,11 +125,13 @@ export default function ArticlesPage() {
             <table className="w-full text-sm text-right">
               <thead className="bg-muted/30 text-muted-foreground border-b border-border/50">
                 <tr>
-                  <th className="px-6 py-4 font-semibold w-1/2">عنوان مقاله</th>
+                  <th className="px-6 py-4 font-semibold w-1/4">عنوان مقاله</th>
+                  <th className="px-6 py-4 font-semibold">نویسنده</th>
+                  <th className="px-6 py-4 font-semibold">تغییر توسط</th>
                   <th className="px-6 py-4 font-semibold">کلمه کلیدی</th>
                   <th className="px-6 py-4 font-semibold">امتیاز سئو</th>
                   <th className="px-6 py-4 font-semibold">وضعیت</th>
-                  <th className="px-6 py-4 font-semibold">تاریخ ایجاد</th>
+                  <th className="px-6 py-4 font-semibold">تاریخ آپدیت</th>
                   <th className="px-6 py-4 font-semibold text-center">عملیات</th>
                 </tr>
               </thead>
@@ -117,11 +139,17 @@ export default function ArticlesPage() {
                 {articles.map((article) => (
                   <tr key={article.id} className="hover:bg-muted/20 transition-colors">
                     <td className="px-6 py-4">
-                      <p className="font-semibold text-foreground truncate max-w-[200px] md:max-w-[400px]">
+                      <p className="font-semibold text-foreground truncate max-w-[150px]">
                         {article.title}
                       </p>
                     </td>
-                    <td className="px-6 py-4 text-muted-foreground">
+                    <td className="px-6 py-4 text-muted-foreground text-sm">
+                      {article.author.username}
+                    </td>
+                    <td className="px-6 py-4 text-muted-foreground text-sm text-center">
+                      {article.last_modified_by ? article.last_modified_by.username : "-"}
+                    </td>
+                    <td className="px-6 py-4 text-muted-foreground text-sm">
                       {article.focus_keyword}
                     </td>
                     <td className="px-6 py-4">
@@ -138,18 +166,22 @@ export default function ArticlesPage() {
                     <td className="px-6 py-4">
                       {getStatusBadge(article.status)}
                     </td>
-                    <td className="px-6 py-4 text-muted-foreground text-xs">
-                      {new Intl.DateTimeFormat("fa-IR", { dateStyle: "short", timeStyle: "short" }).format(new Date(article.created_at))}
+                    <td className="px-6 py-4 text-muted-foreground text-xs text-center">
+                      {new Intl.DateTimeFormat("fa-IR", { dateStyle: "short", timeStyle: "short" }).format(new Date(article.updated_at))}
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center justify-center gap-2">
-                        <Button variant="outline" size="sm" onClick={() => alert("بخش ویرایشگر مجزا در فازهای بعدی اضافه خواهد شد.")}>مشاهده</Button>
-                        {article.status === 'pending_approval' && (
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/dashboard/articles/${article.id}`}>مشاهده / ویرایش</Link>
+                        </Button>
+                        
+                        {(me?.role === "admin" || me?.role === "editor") && article.status === 'pending_approval' && (
                            <Button size="sm" className="bg-green-600 hover:bg-green-500" onClick={() => handleApprove(article.id)}>تایید</Button>
                         )}
-                        {article.status === 'approved' && (
+                        {(me?.role === "admin" || me?.can_publish) && article.status === 'approved' && (
                            <Button size="sm" className="bg-blue-600 hover:bg-blue-500" onClick={() => handlePublish(article.id)}>انتشار</Button>
                         )}
+                        <Button size="sm" variant="destructive" onClick={() => handleDelete(article.id)}>حذف</Button>
                       </div>
                     </td>
                   </tr>

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user, get_db
 from app.core.config import settings
-from app.core.limiter import limiter
+from app.core.limiter import limiter, get_dynamic_daily_limit
 from app.models.article import Article
 from app.models.user import User
 from app.schemas.article import (
@@ -21,6 +21,9 @@ from app.schemas.article import (
     ArticleUpdate,
     GenerateRequest,
     PublishRequest,
+    ArticleAssignRequest,
+    ImproveRequest,
+    ImprovePreviewResponse,
 )
 from app.services.llm_gateway import LLMGateway
 from app.services.seo_generator import (
@@ -41,14 +44,17 @@ _SECTION_DELAY: float = float(getattr(settings, "SECTION_DELAY_SECONDS", "3.0"))
 # توابع کمکی دسترسی و امنیتی
 # ─────────────────────────────────────────────
 
-def _can_view_all(user: User) -> bool:
-    return user.role in ("admin", "editor")
-
 def _can_access(user: User, article: Article) -> bool:
-    return _can_view_all(user) or article.author_id == user.id
+    if user.role == "admin":
+        return True
+    if article.author_id == user.id:
+        return True
+    if user.role == "editor":
+        return any(editor.id == user.id for editor in article.assigned_editors)
+    return False
 
 def _can_publish(user: User) -> bool:
-    return user.role in ("admin", "editor")
+    return user.role == "admin" or user.can_publish
 
 def _has_api_key() -> bool:
     return bool(
@@ -272,7 +278,7 @@ class ArticlePipeline:
 # ─────────────────────────────────────────────
 
 @router.post("/articles/generate-stream")
-@limiter.limit("20/day")
+@limiter.limit(get_dynamic_daily_limit)
 async def generate_stream_post(
     request: Request,
     body: GenerateRequest,
@@ -290,7 +296,7 @@ async def generate_stream_post(
     )
 
 @router.get("/articles/generate-stream")
-@limiter.limit("20/day")
+@limiter.limit(get_dynamic_daily_limit)
 async def generate_stream_get(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
@@ -307,7 +313,7 @@ async def generate_stream_get(
     )
 
 @router.post("/articles/generate", response_model=ArticleResponse)
-@limiter.limit("20/day")
+@limiter.limit(get_dynamic_daily_limit)
 async def generate_no_stream(
     request: Request,
     body: GenerateRequest,
@@ -326,8 +332,14 @@ async def generate_no_stream(
 @router.get("/articles", response_model=list[ArticleListResponse])
 def list_articles(db: Annotated[Session, Depends(get_db)], current_user: Annotated[User, Depends(get_current_user)]):
     query = db.query(Article)
-    if not _can_view_all(current_user):
-        query = query.filter(Article.author_id == current_user.id)
+    if current_user.role != "admin":
+        if current_user.role == "editor":
+            query = query.filter(
+                (Article.author_id == current_user.id) |
+                (Article.assigned_editors.any(User.id == current_user.id))
+            )
+        else:
+            query = query.filter(Article.author_id == current_user.id)
     return query.order_by(Article.created_at.desc()).all()
 
 @router.get("/articles/{article_id}", response_model=ArticleResponse)
@@ -362,9 +374,58 @@ def update_article(article_id: int, body: ArticleUpdate, db: Annotated[Session, 
     for field, value in update_data.items():
         setattr(article, field, value)
 
+    article.last_modified_by_id = current_user.id
     db.commit()
     db.refresh(article)
     return article
+
+@router.post("/articles/{article_id}/assign", response_model=ArticleResponse)
+def assign_editors(
+    article_id: int, 
+    body: ArticleAssignRequest, 
+    db: Annotated[Session, Depends(get_db)], 
+    current_user: Annotated[User, Depends(get_current_user)]
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can assign editors.")
+    
+    article = db.query(Article).filter(Article.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found.")
+        
+    editors = db.query(User).filter(User.id.in_(body.editor_ids)).all()
+    article.assigned_editors = editors
+    db.commit()
+    db.refresh(article)
+    return article
+
+@router.post("/articles/{article_id}/improve-preview", response_model=ImprovePreviewResponse)
+@limiter.limit(get_dynamic_daily_limit)
+async def improve_article_preview(
+    request: Request,
+    article_id: int,
+    body: ImproveRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    article = db.query(Article).filter(Article.id == article_id).first()
+    if not article:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found.")
+    if not _can_access(current_user, article):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="دسترسی ندارید.")
+
+    llm_model = body.llm_model or _default_model()
+    llm = LLMGateway(model=llm_model)
+    generator = SEOGenerator(llm)
+    
+    new_html = await generator.improve_article_html(article.content_html, body.instruction)
+    new_score = fast_seo_scorer(new_html, article.focus_keyword)
+    
+    return ImprovePreviewResponse(
+        new_html=new_html,
+        new_seo_score=new_score,
+        old_seo_score=article.seo_score
+    )
 
 @router.delete("/articles/{article_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_article(article_id: int, db: Annotated[Session, Depends(get_db)], current_user: Annotated[User, Depends(get_current_user)]):

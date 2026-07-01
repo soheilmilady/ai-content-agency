@@ -17,10 +17,13 @@ class Article(Base):
     seo_score: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String, default="draft")
     author_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"))
+    last_modified_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     wp_post_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
-    author = relationship("User", back_populates="articles")
+    author = relationship("User", foreign_keys=[author_id], back_populates="articles")
+    last_modified_by = relationship("User", foreign_keys=[last_modified_by_id])
+    assigned_editors = relationship("User", secondary="article_editors")

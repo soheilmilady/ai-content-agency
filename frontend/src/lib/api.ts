@@ -6,6 +6,7 @@ export interface User {
   email: string;
   username: string;
   role: string;
+  can_publish: boolean;
   is_active: boolean;
   created_at: string;
 }
@@ -18,7 +19,11 @@ export interface Article {
   focus_keyword: string;
   seo_score: number;
   status: string;
+  author: { id: number; username: string };
+  last_modified_by?: { id: number; username: string } | null;
+  assigned_editors: { id: number; username: string }[];
   created_at: string;
+  updated_at: string;
 }
 
 export interface UserCreateData {
@@ -26,12 +31,14 @@ export interface UserCreateData {
   username: string;
   password: string;
   role?: string;
+  can_publish?: boolean;
 }
 
 export interface UserUpdateData {
   email?: string;
   username?: string;
   role?: string;
+  can_publish?: boolean;
   is_active?: boolean;
 }
 
@@ -158,6 +165,34 @@ export async function updateArticle(
   articleData: ArticleUpdateData
 ): Promise<Article> {
   const { data } = await api.patch<Article>(`/articles/${id}`, articleData);
+  return data;
+}
+
+export async function deleteArticle(id: number): Promise<void> {
+  await api.delete(`/articles/${id}`);
+}
+
+export async function assignEditors(id: number, editor_ids: number[]): Promise<Article> {
+  const { data } = await api.post<Article>(`/articles/${id}/assign`, { editor_ids });
+  return data;
+}
+
+export async function improveArticlePreview(
+  id: number,
+  instruction?: string,
+  llm_model?: string
+): Promise<{ new_html: string; new_seo_score: number; old_seo_score: number }> {
+  const { data } = await api.post(`/articles/${id}/improve-preview`, { instruction, llm_model });
+  return data;
+}
+
+export async function getSetting(key: string): Promise<{ key: string; value: string }> {
+  const { data } = await api.get(`/settings/${key}`);
+  return data;
+}
+
+export async function updateSetting(key: string, value: string): Promise<{ key: string; value: string }> {
+  const { data } = await api.put(`/settings/${key}`, { value });
   return data;
 }
 

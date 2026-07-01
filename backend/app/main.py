@@ -8,6 +8,7 @@ from slowapi.errors import RateLimitExceeded
 from app.api.v1.endpoints.auth import router as auth_router
 from app.api.v1.endpoints.articles import router as articles_router
 from app.api.v1.endpoints.users import router as users_router
+from app.api.v1.endpoints.settings import router as settings_router
 from app.core.security import hash_password
 from app.core.config import settings
 from app.db.session import Base, SessionLocal, engine
@@ -43,6 +44,16 @@ def seed_admin() -> None:
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     seed_admin()
+    
+    # Load global rate limit from DB
+    db = SessionLocal()
+    try:
+        from app.models.setting import SystemSetting
+        limit_setting = db.query(SystemSetting).filter(SystemSetting.key == "global_daily_rate_limit").first()
+        app.state.global_limit = limit_setting.value if limit_setting else "20/day"
+    finally:
+        db.close()
+        
     yield
 
 
@@ -64,6 +75,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/api/v1", tags=["auth"])
 app.include_router(users_router, prefix="/api/v1", tags=["users"])
 app.include_router(articles_router, prefix="/api/v1", tags=["articles"])
+app.include_router(settings_router, prefix="/api/v1", tags=["settings"])
 
 
 @app.get("/health")

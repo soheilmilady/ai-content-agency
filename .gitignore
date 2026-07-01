@@ -65,6 +65,8 @@ logs/
 # Misc
 *.pem
 .cache/
+.gemini/
+.agents/
 
 guide for deployment.txt
 CODE_REVIEW_REPORT*.md

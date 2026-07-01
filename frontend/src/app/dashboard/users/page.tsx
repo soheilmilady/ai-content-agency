@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Trash2, Save } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -28,6 +29,8 @@ import {
   getMe,
   getUsers,
   updateUser,
+  getSetting,
+  updateSetting,
   type User,
 } from "@/lib/api";
 
@@ -49,7 +52,12 @@ export default function UsersPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("writer");
+  const [canPublish, setCanPublish] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Settings
+  const [rateLimit, setRateLimit] = useState("20/day");
+  const [savingSettings, setSavingSettings] = useState(false);
 
   async function loadUsers() {
     const data = await getUsers();
@@ -63,6 +71,11 @@ export default function UsersPage() {
           router.replace("/dashboard");
           return;
         }
+        
+        getSetting("global_daily_rate_limit")
+          .then((setting) => setRateLimit(setting.value))
+          .catch(() => {});
+          
         return loadUsers();
       })
       .catch(() => router.replace("/login"))
@@ -76,11 +89,12 @@ export default function UsersPage() {
     setMessage("");
 
     try {
-      await createUser({ email, username, password, role });
+      await createUser({ email, username, password, role, can_publish: canPublish });
       setEmail("");
       setUsername("");
       setPassword("");
       setRole("writer");
+      setCanPublish(false);
       setMessage("کاربر جدید با موفقیت ایجاد شد.");
       await loadUsers();
     } catch {
@@ -107,6 +121,30 @@ export default function UsersPage() {
       await loadUsers();
     } catch {
       setError("به‌روزرسانی وضعیت کاربر با خطا مواجه شد.");
+    }
+  }
+
+  async function handleTogglePublish(user: User) {
+    setError("");
+    try {
+      await updateUser(user.id, { can_publish: !user.can_publish });
+      await loadUsers();
+    } catch {
+      setError("به‌روزرسانی دسترسی انتشار با خطا مواجه شد.");
+    }
+  }
+
+  async function handleSaveSettings() {
+    setSavingSettings(true);
+    setError("");
+    setMessage("");
+    try {
+      await updateSetting("global_daily_rate_limit", rateLimit);
+      setMessage("تنظیمات با موفقیت ذخیره شد.");
+    } catch {
+      setError("ذخیره تنظیمات با خطا مواجه شد.");
+    } finally {
+      setSavingSettings(false);
     }
   }
 
@@ -194,6 +232,14 @@ export default function UsersPage() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="md:col-span-2 flex items-center space-x-2 space-x-reverse">
+              <Checkbox
+                id="can_publish"
+                checked={canPublish}
+                onCheckedChange={(checked) => setCanPublish(checked === true)}
+              />
+              <Label htmlFor="can_publish">اجازه انتشار مستقیم در وردپرس</Label>
+            </div>
             <div className="md:col-span-2">
               <Button
                 type="submit"
@@ -237,6 +283,7 @@ export default function UsersPage() {
                   <th className="px-3 py-2 font-medium">نام کاربری</th>
                   <th className="px-3 py-2 font-medium">ایمیل</th>
                   <th className="px-3 py-2 font-medium">نقش</th>
+                  <th className="px-3 py-2 font-medium">حق انتشار</th>
                   <th className="px-3 py-2 font-medium">وضعیت</th>
                   <th className="px-3 py-2 font-medium">عملیات</th>
                 </tr>
@@ -268,6 +315,14 @@ export default function UsersPage() {
                           ))}
                         </SelectContent>
                       </Select>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center justify-center">
+                        <Checkbox
+                          checked={user.can_publish}
+                          onCheckedChange={() => handleTogglePublish(user)}
+                        />
+                      </div>
                     </td>
                     <td className="px-3 py-3">
                       <Badge
@@ -302,6 +357,37 @@ export default function UsersPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </CardContent>
+      </Card>
+      
+      <Card>
+        <CardHeader>
+          <CardTitle>تنظیمات سیستمی</CardTitle>
+          <CardDescription>
+            مدیریت محدودیت‌ها و تنظیمات سراسری پلتفرم
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-end gap-4 max-w-sm">
+            <div className="space-y-2 flex-1">
+              <Label htmlFor="rate_limit">سقف درخواست‌های روزانه تولید و بهبود هوش مصنوعی</Label>
+              <Input
+                id="rate_limit"
+                value={rateLimit}
+                onChange={(e) => setRateLimit(e.target.value)}
+                placeholder="20/day"
+                dir="ltr"
+              />
+            </div>
+            <Button 
+              onClick={handleSaveSettings} 
+              disabled={savingSettings}
+              className="bg-zinc-800 hover:bg-zinc-700"
+            >
+              {savingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 ml-2" />}
+              ذخیره
+            </Button>
           </div>
         </CardContent>
       </Card>
