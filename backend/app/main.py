@@ -41,7 +41,7 @@ def seed_admin() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Base.metadata.create_all(bind=engine)  # Use Alembic instead
+    Base.metadata.create_all(bind=engine)
     seed_admin()
     yield
 

@@ -8,8 +8,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
-    BOOTSTRAP_ADMIN_EMAIL: str | None = None
-    BOOTSTRAP_ADMIN_PASSWORD: str | None = None
+    BOOTSTRAP_ADMIN_EMAIL: str = "admin@agency.com"
+    BOOTSTRAP_ADMIN_PASSWORD: str = "Admin1234!"
     GROQ_API_KEY: str = ""
     SERPER_API_KEY: str = ""
     WP_URL: str = ""
