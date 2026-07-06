@@ -44,18 +44,6 @@ def seed_admin() -> None:
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     seed_admin()
-    
-    # Load global rate limit from DB
-    db = SessionLocal()
-    try:
-        from app.models.setting import SystemSetting
-        import app.core.limiter as limiter_module
-        limit_setting = db.query(SystemSetting).filter(SystemSetting.key == "global_daily_rate_limit").first()
-        if limit_setting:
-            limiter_module.GLOBAL_DAILY_LIMIT = limit_setting.value
-        app.state.global_limit = limiter_module.GLOBAL_DAILY_LIMIT
-    finally:
-        db.close()
         
     yield
 
@@ -70,7 +58,7 @@ app.add_middleware(
         "http://localhost:3000",
         "https://ai-content-agency.vercel.app",
     ],
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origin_regex=r"^https://ai-content-agency(-[a-zA-Z0-9]+)?\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

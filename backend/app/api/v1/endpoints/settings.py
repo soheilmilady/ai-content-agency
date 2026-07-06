@@ -34,9 +34,4 @@ def update_setting(
     db.commit()
     db.refresh(setting)
     
-    if key == "global_daily_rate_limit":
-        import app.core.limiter as limiter_module
-        limiter_module.GLOBAL_DAILY_LIMIT = setting.value
-        request.app.state.global_limit = setting.value
-        
     return setting

@@ -7,10 +7,7 @@ from bs4 import BeautifulSoup
 from app.services.json_utils import parse_json_response
 from app.services.llm_gateway import LLMGateway
 
-_ALIEN_FILTER = re.compile(
-    r"[\u0900-\u097F\u4E00-\u9FFF\u3040-\u30FF\u0E00-\u0E7F\u0400-\u04FF\u0500-\u052F"
-    r"ạảăắằẳẵặâấầẩẫậẹẻẽêềếểễệỉịọỏôốồổỗộơớờởỡợụủưứừửữựỵỷỹĐđổế]+"
-)
+# Filter removed for internationalization
 
 @dataclass
 class ArticleState:
@@ -42,7 +39,6 @@ def sanitize_html(raw: str, h2_title: str = "") -> str:
     out = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL | re.IGNORECASE)
     out = re.sub(r"\x60{3}html|\x60{3}", "", out, flags=re.IGNORECASE)
     out = re.sub(r"(?m)^#{1,6}\s*", "", out)
-    out = _ALIEN_FILTER.sub("", out)
 
     # پاکسازی کلمات نشت کرده و مارک‌دان‌های مزاحم
     cliches = [r"\bInteraction\b", r"\bnhanh\b", r"\bkéo dài\b", r"\bphổ biến\b", r"===\s*فکت‌هایِ تأییدشده\s*==="]
@@ -70,7 +66,7 @@ def sanitize_html(raw: str, h2_title: str = "") -> str:
 
 def fast_seo_scorer(html: str, keyword: str) -> int:
     soup = BeautifulSoup(html, "html.parser")
-    text = soup.get_text(separator=" ", strip=True)
+    text = soup.get_text(separator=" ", strip=True).lower()
     words = text.split()
     word_count = len(words)
 
@@ -79,13 +75,13 @@ def fast_seo_scorer(html: str, keyword: str) -> int:
     h1_tag = soup.find("h1")
     if h1_tag:
         score += 15
-        if keyword in h1_tag.get_text():
+        if keyword.lower() in h1_tag.get_text().lower():
             score += 10
 
     if soup.find("h2"):
         score += 10
 
-    kw_count = text.count(keyword)
+    kw_count = text.count(keyword.lower())
     if word_count > 0:
         density = (kw_count / word_count) * 100
         if 0.5 <= density <= 2.5:
@@ -173,7 +169,7 @@ class SEOGenerator:
                 "role": "system",
                 "content": (
                     f"تو یک معمار محتوای سئو در حوزه «{topic}» هستی. "
-                    "خروجی: فقط JSON معتبر، تمام مقادیر فارسی (مگر اصطلاحات تخصصی)."
+                    "خروجی: فقط JSON معتبر، تمام مقادیر در زبانِ کلمه‌ی کلیدی (مگر اصطلاحات تخصصی)."
                 ),
             },
             {
@@ -185,8 +181,8 @@ class SEOGenerator:
                     "JSON با این ساختار دقیق:\n"
                     "{\n"
                     '  "h1": "عنوان حاوی کلمه کلیدی",\n'
-                    '  "meta_description": "۱۵۰ تا ۱۶۰ کاراکتر فارسی",\n'
-                    '  "domain_glossary": {"اصطلاح_انگلیسی": "معادل_فارسی"},\n'
+                    '  "meta_description": "بین ۱۵۰ تا ۱۶۰ کاراکتر در زبانِ کلمه‌ی کلیدی",\n'
+                    '  "domain_glossary": {"اصطلاح_انگلیسی": "معادل_فارسی_یا_محلی"},\n'
                     '  "sections": [\n'
                     "    {\n"
                     '      "h2": "عنوان بخش",\n'
@@ -288,7 +284,7 @@ class SEOGenerator:
                 "content": (
                     f"تو یک روزنامه‌نگار تحلیلی و کارشناس سئو در حوزه «{keyword}» هستی.\n"
                     "قوانینِ معماری و نگارش:\n"
-                    "۱. کلمات عمومی منحصراً باید به زبان فارسی معیار نوشته شوند. استفاده از زبان‌های ویتنامی، عربی و غیره اکیداً ممنوع است.\n"
+                    "۱. مقاله باید منحصراً به همان زبانِ کلمه‌ی کلیدی نوشته شود. استفاده از الفبا و کاراکترهای سایر زبان‌ها ممنوع است مگر برای اصطلاحات تخصصی که جایگزین ندارند.\n"
                     "۲. کلمه کلیدی را ۱ یا ۲ بار در متن کاملاً طبیعی استفاده کن.\n"
                     "۳. تحت هیچ شرایطی عنوان H2 را در خط اول متنت کپی نکن.\n"
                     "۴. تحت هیچ شرایطی کلمه «فکت‌های تأییدشده» یا داده‌های خام جیسون را در متن خروجی چاپ نکن! تو فقط باید مقاله را بنویسی.\n"
