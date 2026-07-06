@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class GenerateRequest(BaseModel):
     topic: str
     keyword: str
+    h2_keywords: list[str] | None = None
     llm_model: str | None = None
 
 

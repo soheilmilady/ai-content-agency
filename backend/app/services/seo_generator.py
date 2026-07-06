@@ -162,14 +162,20 @@ class SEOGenerator:
         except Exception as e:
             return html
 
-    async def generate_outline(self, topic: str, keyword: str, research_data: dict[str, Any]) -> dict[str, Any]:
+    async def generate_outline(self, topic: str, keyword: str, research_data: dict[str, Any], h2_keywords: list[str] | None = None) -> dict[str, Any]:
         headings = research_data.get("headings", [])
+        
+        h2_instruction = ""
+        if h2_keywords:
+            h2_instruction = f"\n- الزامی: از تیترهای H2 زیر عیناً به عنوان عناوین بخش‌ها استفاده کن: {', '.join(h2_keywords)}"
+            
         messages = [
             {
                 "role": "system",
                 "content": (
                     f"تو یک معمار محتوای سئو در حوزه «{topic}» هستی. "
                     "خروجی: فقط JSON معتبر، تمام مقادیر در زبانِ کلمه‌ی کلیدی (مگر اصطلاحات تخصصی)."
+                    f"{h2_instruction}"
                 ),
             },
             {

@@ -86,9 +86,10 @@ function parseSseChunk(buffer: string): {
   return { events, remainder };
 }
 
-export default function ArticleGenerator({ initialKeyword = "" }: { initialKeyword?: string }) {
+export default function ArticleGenerator({ initialKeyword = "", initialH2s = [] }: { initialKeyword?: string, initialH2s?: string[] }) {
   const [topic, setTopic] = useState("");
   const [keyword, setKeyword] = useState(initialKeyword);
+  const [h2s] = useState<string[]>(initialH2s);
   const [selectedModel, setSelectedModel] = useState(AI_MODELS[0].value);
 
   const [generating, setGenerating] = useState(false);
@@ -138,6 +139,7 @@ export default function ArticleGenerator({ initialKeyword = "" }: { initialKeywo
         body: JSON.stringify({
           topic,
           keyword,
+          h2_keywords: h2s.length > 0 ? h2s : undefined,
           llm_model: selectedModel,
         }),
       });
@@ -269,27 +271,44 @@ export default function ArticleGenerator({ initialKeyword = "" }: { initialKeywo
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          <div className="grid gap-5 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="topic">موضوع مقاله</Label>
+          <div className="grid gap-5">
+            <div className="grid gap-2">
+              <Label htmlFor="topic">موضوع کلی یا عنوان پیشنهادی <span className="text-red-500">*</span></Label>
               <Input
                 id="topic"
-                placeholder="مثال: راهنمای کامل سئو محتوا"
+                placeholder="مثال: روش‌های تهیه قهوه سرد دم"
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
                 disabled={generating}
+                className="bg-background/50"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="keyword">کلمه کلیدی اصلی</Label>
+
+            <div className="grid gap-2">
+              <Label htmlFor="keyword">کلمه کلیدی سئو (Focus Keyword) <span className="text-red-500">*</span></Label>
               <Input
                 id="keyword"
-                placeholder="مثال: سئو محتوا"
+                placeholder="مثال: قهوه کلدبرو"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 disabled={generating}
+                className="bg-background/50"
               />
             </div>
+
+            {h2s.length > 0 && (
+              <div className="grid gap-2">
+                <Label>زیرعنوان‌های اجباری (H2)</Label>
+                <div className="flex flex-wrap gap-2 mt-1 p-3 bg-muted/30 rounded-lg border border-border/50">
+                  {h2s.map((h2, idx) => (
+                    <Badge key={idx} variant="secondary">{h2}</Badge>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  این زیرعنوان‌ها از طریق ابزار خوشه‌بندی اضافه شده‌اند و به اجبار در مقاله تولیدی استفاده خواهند شد.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">

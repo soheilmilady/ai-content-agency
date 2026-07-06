@@ -63,10 +63,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+from app.api.v1.endpoints.seo import router as seo_router
+
 app.include_router(auth_router, prefix="/api/v1", tags=["auth"])
 app.include_router(users_router, prefix="/api/v1", tags=["users"])
 app.include_router(articles_router, prefix="/api/v1", tags=["articles"])
 app.include_router(settings_router, prefix="/api/v1", tags=["settings"])
+app.include_router(seo_router, prefix="/api/v1/seo", tags=["seo"])
 
 
 @app.get("/health")

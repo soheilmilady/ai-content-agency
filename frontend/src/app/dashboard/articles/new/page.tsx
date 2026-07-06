@@ -12,8 +12,17 @@ import ArticleGenerator from "@/components/dashboard/ArticleGenerator";
 function NewArticleContent() {
   const searchParams = useSearchParams();
   const prefillKeyword = searchParams.get("keyword") || "";
+  const h2sParam = searchParams.get("h2s");
+  let prefillH2s: string[] = [];
+  try {
+    if (h2sParam) {
+      prefillH2s = JSON.parse(h2sParam);
+    }
+  } catch (e) {
+    console.error("Failed to parse h2s param:", e);
+  }
 
-  return <ArticleGenerator initialKeyword={prefillKeyword} />;
+  return <ArticleGenerator initialKeyword={prefillKeyword} initialH2s={prefillH2s} />;
 }
 
 export default function NewArticlePage() {

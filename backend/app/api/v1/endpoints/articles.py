@@ -121,7 +121,7 @@ class ArticlePipeline:
         self.db.refresh(article)
         return article
 
-    async def execute_stream(self, topic: str, keyword: str) -> AsyncGenerator[str, None]:
+    async def execute_stream(self, topic: str, keyword: str, h2_keywords: list[str] | None = None) -> AsyncGenerator[str, None]:
         try:
             if not _has_api_key():
                 yield _sse({"step": "error", "message": "کلید API تنظیم نشده است."})
@@ -141,7 +141,7 @@ class ArticlePipeline:
 
             # ۳. فاز طراحی ساختار (Outline)
             yield _sse({"step": "outlining", "message": "در حال طراحی ساختار..."})
-            state.outline = await self.generator.generate_outline(topic, keyword, state.research_data)
+            state.outline = await self.generator.generate_outline(topic, keyword, state.research_data, h2_keywords)
 
             sections = state.outline.get("sections", [])
             lsi_keywords = state.outline.get("lsi_keywords", [])
@@ -232,7 +232,7 @@ class ArticlePipeline:
             logger.error(f"Generation stream error: {exc}", exc_info=True)
             yield _sse({"step": "error", "message": "یک خطای داخلی در سرور رخ داد. تیم فنی مطلع شد."})
 
-    async def execute_no_stream(self, topic: str, keyword: str) -> Article:
+    async def execute_no_stream(self, topic: str, keyword: str, h2_keywords: list[str] | None = None) -> Article:
         if not _has_api_key():
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="API key تنظیم نشده.")
         
@@ -241,7 +241,7 @@ class ArticlePipeline:
         raw_facts = self._extract_facts(state.research_data)
         state.all_facts = await self.generator.validate_and_deduplicate_facts(raw_facts)
         
-        state.outline = await self.generator.generate_outline(topic, keyword, state.research_data)
+        state.outline = await self.generator.generate_outline(topic, keyword, state.research_data, h2_keywords)
         
         sections = state.outline.get("sections", [])
         lsi_keywords = state.outline.get("lsi_keywords", [])
@@ -287,7 +287,7 @@ async def generate_stream_post(
 ):
     pipeline = ArticlePipeline(db, current_user, body.llm_model)
     return StreamingResponse(
-        pipeline.execute_stream(body.topic, body.keyword),
+        pipeline.execute_stream(body.topic, body.keyword, body.h2_keywords),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -322,7 +322,7 @@ async def generate_no_stream(
 ):
     try:
         pipeline = ArticlePipeline(db, current_user, body.llm_model)
-        return await pipeline.execute_no_stream(body.topic, body.keyword)
+        return await pipeline.execute_no_stream(body.topic, body.keyword, body.h2_keywords)
     except HTTPException:
         raise
     except Exception as exc:

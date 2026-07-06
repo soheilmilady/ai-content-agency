@@ -23,6 +23,10 @@ import {
   useGoogleSuggest,
   type ScrapeConfig,
 } from "@/hooks/useGoogleSuggest";
+import { TopicClusterCard, type ClusterData } from "@/components/seo/TopicClusterCard";
+import Cookies from "js-cookie";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 // ─────────────────────────────────────────────
 // Language & Country Maps
@@ -81,6 +85,9 @@ export default function KeywordResearchPage() {
   // ── UI State ──
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [filterText, setFilterText] = useState("");
+  const [viewMode, setViewMode] = useState<"list" | "clusters">("list");
+  const [clusters, setClusters] = useState<ClusterData[]>([]);
+  const [isClustering, setIsClustering] = useState(false);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleStart = () => {
@@ -115,6 +122,36 @@ export default function KeywordResearchPage() {
     router.push(
       `/dashboard/articles/new?keyword=${encodeURIComponent(keyword)}`,
     );
+  };
+
+  const handleCluster = async () => {
+    if (results.length === 0) return;
+    setIsClustering(true);
+    setViewMode("clusters");
+    
+    const token = Cookies.get("auth_token");
+    // Send top 50 keywords sorted by frequency score (which are already sorted in useGoogleSuggest)
+    const topKeywords = results.slice(0, 50).map((r) => r.keyword);
+    
+    try {
+      const response = await fetch(`${API_URL}/seo/cluster`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ keywords: topKeywords }),
+      });
+      if (!response.ok) throw new Error("خطا در خوشه‌بندی");
+      const data = await response.json();
+      setClusters(data.clusters || []);
+    } catch (err) {
+      console.error(err);
+      alert("خطا در ارتباط با هوش مصنوعی برای خوشه‌بندی معنایی.");
+      setViewMode("list");
+    } finally {
+      setIsClustering(false);
+    }
   };
 
   // ── Filter results ──
@@ -358,13 +395,49 @@ export default function KeywordResearchPage() {
       {/* ═══════ Results Table ═══════ */}
       {results.length > 0 && (
         <Card className="border-border/50 bg-card/80 backdrop-blur-sm">
-          <CardHeader className="pb-3">
+          <CardHeader className="pb-3 border-b border-border/30 mb-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-              <CardTitle className="text-base">
-                نتایج کشف‌شده ({filteredResults.length.toLocaleString("fa-IR")}{" "}
-                کلمه)
-              </CardTitle>
+              <div className="flex items-center gap-4">
+                <CardTitle className="text-base">
+                  نتایج کشف‌شده ({filteredResults.length.toLocaleString("fa-IR")} کلمه)
+                </CardTitle>
+                <div className="flex bg-muted/50 p-1 rounded-md">
+                  <button
+                    onClick={() => setViewMode("list")}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-sm transition-all ${
+                      viewMode === "list" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    📋 لیست ساده
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (clusters.length > 0) setViewMode("clusters");
+                      else handleCluster();
+                    }}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-sm transition-all ${
+                      viewMode === "clusters" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    🗂️ خوشه‌های موضوعی
+                  </button>
+                </div>
+              </div>
+
               <div className="flex gap-2 flex-wrap">
+                {/* Cluster Button */}
+                <Button
+                  onClick={handleCluster}
+                  disabled={isRunning || isClustering}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm text-xs h-8"
+                >
+                  {isClustering ? (
+                    <Loader2 className="w-3.5 h-3.5 ml-1.5 animate-spin" />
+                  ) : (
+                    <span className="text-base mr-1 ml-1">🧠</span>
+                  )}
+                  {isClustering ? "در حال پردازش..." : "خوشه‌بندی با AI"}
+                </Button>
                 {/* Translation Button */}
                 {showTranslateButton && (
                   <Button
@@ -404,7 +477,29 @@ export default function KeywordResearchPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="max-h-[600px] overflow-y-auto rounded-lg border border-border/30">
+            {viewMode === "clusters" ? (
+              <div className="space-y-6">
+                {isClustering ? (
+                  <div className="py-12 flex flex-col items-center justify-center text-muted-foreground animate-pulse">
+                    <span className="text-4xl mb-4">🧠</span>
+                    <p className="text-sm font-semibold">هوش مصنوعی در حال تحلیل معنایی و ساخت خوشه‌ها...</p>
+                    <p className="text-xs mt-2">این عملیات ممکن است چند ثانیه زمان ببرد.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {clusters.map((cluster, idx) => (
+                      <TopicClusterCard key={idx} cluster={cluster} />
+                    ))}
+                    {clusters.length === 0 && !isClustering && (
+                      <div className="col-span-full py-8 text-center text-muted-foreground">
+                        خوشه‌ای یافت نشد. لطفاً دوباره تلاش کنید.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="max-h-[600px] overflow-y-auto rounded-lg border border-border/30">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm z-10">
                   <tr className="text-xs text-muted-foreground">
@@ -526,6 +621,7 @@ export default function KeywordResearchPage() {
                 </tbody>
               </table>
             </div>
+            )}
           </CardContent>
         </Card>
       )}
