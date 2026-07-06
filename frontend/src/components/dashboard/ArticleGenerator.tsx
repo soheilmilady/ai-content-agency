@@ -86,9 +86,9 @@ function parseSseChunk(buffer: string): {
   return { events, remainder };
 }
 
-export default function ArticleGenerator() {
+export default function ArticleGenerator({ initialKeyword = "" }: { initialKeyword?: string }) {
   const [topic, setTopic] = useState("");
-  const [keyword, setKeyword] = useState("");
+  const [keyword, setKeyword] = useState(initialKeyword);
   const [selectedModel, setSelectedModel] = useState(AI_MODELS[0].value);
 
   const [generating, setGenerating] = useState(false);

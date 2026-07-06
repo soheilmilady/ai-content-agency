@@ -11,7 +11,8 @@ import {
   Users,
   Sparkles,
   Menu,
-  FileText
+  FileText,
+  SearchCode,
 } from "lucide-react";
 
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -21,6 +22,7 @@ import { getMe, type User } from "@/lib/api";
 const navItems = [
   { href: "/dashboard", label: "داشبورد", icon: LayoutDashboard },
   { href: "/dashboard/articles/new", label: "تولید هوشمند", icon: Sparkles },
+  { href: "/dashboard/keyword-research", label: "تحقیق کلمات کلیدی", icon: SearchCode },
   { href: "/dashboard/articles", label: "لیست مقالات", icon: FileText },
   { href: "/dashboard/profile", label: "حساب کاربری", icon: UserCircle },
 ];
