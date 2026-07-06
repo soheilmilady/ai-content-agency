@@ -109,7 +109,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         <nav className="flex-1 space-y-1.5 p-4">
           {sidebarItems.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href || pathname.startsWith(`${href}/`);
+            const active = href === "/dashboard"
+              ? pathname === href
+              : pathname === href || pathname.startsWith(`${href}/`);
             return (
               <Link
                 key={href}

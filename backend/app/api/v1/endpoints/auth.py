@@ -16,7 +16,9 @@ router = APIRouter()
 @router.post("/auth/login", response_model=Token)
 @limiter.limit("10/minute")
 def login(request: Request, form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db: Annotated[Session, Depends(get_db)]):
-    user = db.query(User).filter(User.email == form_data.username).first()
+    user = db.query(User).filter(
+        (User.email == form_data.username) | (User.username == form_data.username)
+    ).first()
     if user is None or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

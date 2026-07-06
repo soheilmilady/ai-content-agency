@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { getMe, updateProfile } from "@/lib/api";
 
 export default function ProfilePage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -35,8 +37,11 @@ export default function ProfilePage() {
         setUsername(user.username);
         setOriginalUser({ email: user.email, username: user.username });
       })
+      .catch(() => {
+        router.replace("/login");
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -78,8 +83,11 @@ export default function ProfilePage() {
     setSaving(true);
 
     try {
-      await updateProfile(payload);
+      const updatedUser = await updateProfile(payload);
       setMessage("اطلاعات حساب کاربری با موفقیت به‌روزرسانی شد.");
+      setOriginalUser({ email: updatedUser.email, username: updatedUser.username });
+      setEmail(updatedUser.email);
+      setUsername(updatedUser.username);
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");

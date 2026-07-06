@@ -111,6 +111,7 @@ export default function UsersPage() {
       await loadUsers();
     } catch {
       setError("به‌روزرسانی نقش کاربر با خطا مواجه شد.");
+      await loadUsers();
     }
   }
 
@@ -121,6 +122,7 @@ export default function UsersPage() {
       await loadUsers();
     } catch {
       setError("به‌روزرسانی وضعیت کاربر با خطا مواجه شد.");
+      await loadUsers();
     }
   }
 
@@ -131,6 +133,7 @@ export default function UsersPage() {
       await loadUsers();
     } catch {
       setError("به‌روزرسانی دسترسی انتشار با خطا مواجه شد.");
+      await loadUsers();
     }
   }
 
@@ -214,6 +217,7 @@ export default function UsersPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                minLength={8}
                 dir="ltr"
               />
             </div>

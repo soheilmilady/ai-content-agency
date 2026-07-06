@@ -5,7 +5,6 @@ from collections.abc import AsyncGenerator
 import litellm
 from litellm import acompletion
 from litellm.exceptions import RateLimitError
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
 
@@ -46,7 +45,7 @@ def _friendly_llm_error(model: str, exc: Exception) -> ValueError:
 class LLMGateway:
     def __init__(self, model: str | None = None) -> None:
         self.model = model or settings.DEFAULT_LLM_MODEL
-        self.fallback_model = "groq/llama-3.1-8b-instant"
+        self.fallback_model = "llama-3.1-8b-instant"
 
     def _resolve_model(self, target_model: str) -> str:
         if target_model.startswith("groq/"):
@@ -67,7 +66,7 @@ class LLMGateway:
             "api_key": settings.GROQ_API_KEY,
             "stream": stream,
             "temperature": 0.45,
-            "max_tokens": 850 if not json_mode else 750,
+            "max_tokens": dynamic_token_ceiling,
         }
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}

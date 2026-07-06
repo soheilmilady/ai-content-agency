@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search,
@@ -24,9 +24,7 @@ import {
   type ScrapeConfig,
 } from "@/hooks/useGoogleSuggest";
 import { TopicClusterCard, type ClusterData } from "@/components/seo/TopicClusterCard";
-import Cookies from "js-cookie";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+import { clusterKeywords } from "@/lib/api";
 
 // ─────────────────────────────────────────────
 // Language & Country Maps
@@ -103,6 +101,12 @@ export default function KeywordResearchPage() {
     startScraping(config);
   };
 
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    };
+  }, []);
+
   const handleCopy = (keyword: string, index: number) => {
     navigator.clipboard.writeText(keyword);
     setCopiedIndex(index);
@@ -129,26 +133,18 @@ export default function KeywordResearchPage() {
     setIsClustering(true);
     setViewMode("clusters");
     
-    const token = Cookies.get("auth_token");
-    // Send top 50 keywords sorted by frequency score (which are already sorted in useGoogleSuggest)
     const topKeywords = results.slice(0, 50).map((r) => r.keyword);
     
     try {
-      const response = await fetch(`${API_URL}/seo/cluster`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ keywords: topKeywords }),
-      });
-      if (!response.ok) throw new Error("خطا در خوشه‌بندی");
-      const data = await response.json();
+      const data = await clusterKeywords(topKeywords);
       setClusters(data.clusters || []);
     } catch (err) {
       console.error(err);
-      alert("خطا در ارتباط با هوش مصنوعی برای خوشه‌بندی معنایی.");
-      setViewMode("list");
+      const axiosError = err as { response?: { status?: number } };
+      if (axiosError.response?.status !== 401) {
+        alert("خطا در ارتباط با هوش مصنوعی برای خوشه‌بندی معنایی.");
+        setViewMode("list");
+      }
     } finally {
       setIsClustering(false);
     }

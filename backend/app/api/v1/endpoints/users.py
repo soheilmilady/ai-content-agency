@@ -40,6 +40,7 @@ def create_user(
         username=body.username,
         hashed_password=hash_password(body.password),
         role=body.role,
+        can_publish=body.can_publish,
     )
     db.add(user)
     db.commit()
@@ -84,6 +85,10 @@ def update_user(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Username already taken",
             )
+
+    if "password" in update_data:
+        user.hashed_password = hash_password(update_data["password"])
+        del update_data["password"]
 
     for field, value in update_data.items():
         setattr(user, field, value)

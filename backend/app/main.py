@@ -52,12 +52,11 @@ app = FastAPI(title="AI Content Agency", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+origins = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "https://ai-content-agency.vercel.app",
-    ],
+    allow_origins=origins,
     allow_origin_regex=r"^https://ai-content-agency(-[a-zA-Z0-9]+)?\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],

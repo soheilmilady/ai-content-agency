@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, Save, Wand2, Users } from "lucide-react";
+import DOMPurify from "dompurify";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -128,23 +129,31 @@ export default function ArticleDetailPage({ params }: { params: { id: string } }
     return <div className="text-center py-20">مقاله یافت نشد.</div>;
   }
 
+  const canEdit = me
+    ? me.role === "admin" ||
+      article.author.id === me.id ||
+      (me.role === "editor" && article.assigned_editors.some(e => e.id === me.id))
+    : false;
+
   return (
     <div dir="rtl" className="mx-auto max-w-5xl space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold">ویرایش مقاله: {article.title}</h2>
+          <h2 className="text-2xl font-bold">{canEdit ? "ویرایش مقاله" : "مشاهده مقاله"}: {article.title}</h2>
           <p className="text-muted-foreground mt-1">کلمه کلیدی: {article.focus_keyword} | امتیاز سئو: {article.seo_score}</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowAiModal(true)} className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200">
-            <Wand2 className="w-4 h-4 ml-2" />
-            بهبود با هوش مصنوعی
-          </Button>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? <Loader2 className="w-4 h-4 animate-spin ml-2" /> : <Save className="w-4 h-4 ml-2" />}
-            ذخیره تغییرات
-          </Button>
-        </div>
+        {canEdit && (
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setShowAiModal(true)} className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200">
+              <Wand2 className="w-4 h-4 ml-2" />
+              بهبود با هوش مصنوعی
+            </Button>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin ml-2" /> : <Save className="w-4 h-4 ml-2" />}
+              ذخیره تغییرات
+            </Button>
+          </div>
+        )}
       </div>
 
       {error && <div className="p-4 bg-red-100 text-red-800 rounded">{error}</div>}
@@ -159,7 +168,7 @@ export default function ArticleDetailPage({ params }: { params: { id: string } }
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>عنوان مقاله</Label>
-                <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} disabled={!canEdit} />
               </div>
               <div className="space-y-2">
                 <Label>ویرایشگر HTML</Label>
@@ -168,6 +177,7 @@ export default function ArticleDetailPage({ params }: { params: { id: string } }
                   dir="ltr"
                   value={contentHtml}
                   onChange={(e) => setContentHtml(e.target.value)}
+                  disabled={!canEdit}
                 />
               </div>
             </CardContent>
@@ -182,7 +192,9 @@ export default function ArticleDetailPage({ params }: { params: { id: string } }
             <CardContent>
               <div 
                 className="prose prose-sm max-w-none border rounded-md p-4 bg-background max-h-[500px] overflow-y-auto"
-                dangerouslySetInnerHTML={{ __html: contentHtml }}
+                dangerouslySetInnerHTML={{
+                  __html: typeof window !== "undefined" ? DOMPurify.sanitize(contentHtml) : contentHtml
+                }}
               />
             </CardContent>
           </Card>
@@ -274,7 +286,9 @@ export default function ArticleDetailPage({ params }: { params: { id: string } }
                     <Label>پیش‌نمایش HTML تغییر یافته</Label>
                     <div 
                       className="prose prose-sm border p-4 max-h-60 overflow-y-auto rounded-md bg-muted/30"
-                      dangerouslySetInnerHTML={{ __html: previewData.new_html }}
+                      dangerouslySetInnerHTML={{
+                        __html: typeof window !== "undefined" ? DOMPurify.sanitize(previewData.new_html) : previewData.new_html
+                      }}
                     />
                   </div>
 

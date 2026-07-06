@@ -9,6 +9,8 @@ class UserCreate(BaseModel):
     username: str
     password: str = Field(min_length=8)
     role: Literal["admin", "editor", "writer"] = "writer"
+    can_publish: bool = False
+
 
 
 class UserLogin(BaseModel):
@@ -39,6 +41,7 @@ class UserUpdate(BaseModel):
     role: Literal["admin", "editor", "writer"] | None = None
     can_publish: bool | None = None
     is_active: bool | None = None
+    password: str | None = Field(default=None, min_length=8)
 
 
 class ProfileUpdate(BaseModel):

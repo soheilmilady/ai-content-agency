@@ -52,11 +52,20 @@ def sanitize_html(raw: str, h2_title: str = "") -> str:
     soup = BeautifulSoup(out, "html.parser")
     valid_tags = {
         "p", "h1", "h2", "h3", "h4", "ul", "ol", "li", "strong", "em", "br",
-        "table", "thead", "tbody", "tr", "th", "td", "blockquote"
+        "table", "thead", "tbody", "tr", "th", "td", "blockquote", "a"
     }
     for tag in soup.find_all(True):
         if tag.name not in valid_tags:
             tag.unwrap()
+        else:
+            # پاک‌سازی صفت‌های مخرب برای جلوگیری از XSS
+            attrs_to_remove = [attr for attr in tag.attrs if attr.lower().startswith("on")]
+            for attr in attrs_to_remove:
+                del tag[attr]
+            if tag.name == "a" and "href" in tag.attrs:
+                href = str(tag["href"]).strip().lower()
+                if href.startswith("javascript:") or href.startswith("data:"):
+                    del tag["href"]
 
     out = str(soup)
     out = re.sub(r" {2,}", " ", out)
@@ -132,6 +141,8 @@ class SEOGenerator:
                     if isinstance(val, list):
                         for item in val:
                             if isinstance(item, str):
+                                clean_facts.append(item)
+                            elif isinstance(item, dict):
                                 clean_facts.append(item.get('محتوا', item.get('content', str(item))))
             return [str(f) for f in clean_facts if f]
         except Exception:

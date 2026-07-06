@@ -44,8 +44,10 @@ _SECTION_DELAY: float = float(getattr(settings, "SECTION_DELAY_SECONDS", "3.0"))
 # توابع کمکی دسترسی و امنیتی
 # ─────────────────────────────────────────────
 
-def _can_access(user: User, article: Article) -> bool:
+def _can_access(user: User, article: Article, read_only: bool = False) -> bool:
     if user.role == "admin":
+        return True
+    if read_only and user.role == "viewer":
         return True
     if article.author_id == user.id:
         return True
@@ -332,7 +334,7 @@ async def generate_no_stream(
 @router.get("/articles", response_model=list[ArticleListResponse])
 def list_articles(db: Annotated[Session, Depends(get_db)], current_user: Annotated[User, Depends(get_current_user)]):
     query = db.query(Article)
-    if current_user.role != "admin":
+    if current_user.role not in ("admin", "viewer"):
         if current_user.role == "editor":
             query = query.filter(
                 (Article.author_id == current_user.id) |
@@ -347,7 +349,7 @@ def get_article(article_id: int, db: Annotated[Session, Depends(get_db)], curren
     article = db.query(Article).filter(Article.id == article_id).first()
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مقاله یافت نشد.")
-    if not _can_access(current_user, article):
+    if not _can_access(current_user, article, read_only=True):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="دسترسی ندارید.")
     return article
 
@@ -370,6 +372,12 @@ def update_article(article_id: int, body: ArticleUpdate, db: Annotated[Session, 
     # 2. XSS Prevention: Sanitize stored HTML
     if "content_html" in update_data and update_data["content_html"]:
         update_data["content_html"] = sanitize_html(update_data["content_html"])
+
+    # 3. Reset status on writer edits to force review
+    if current_user.role not in ("admin", "editor"):
+        if "content_html" in update_data or "title" in update_data or "meta_description" in update_data:
+            if article.status in ("approved", "published"):
+                article.status = "pending_approval"
 
     for field, value in update_data.items():
         setattr(article, field, value)
@@ -463,7 +471,7 @@ async def publish_article(article_id: int, body: PublishRequest, db: Annotated[S
     if not _can_access(current_user, article):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="دسترسی ندارید.")
 
-    if article.status != "approved":
+    if article.status not in ("approved", "published"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="فقط مقالاتی که تأیید شده‌اند (approved) قابل انتشار هستند.")
 
     wp_url = body.wp_url or getattr(settings, "WP_URL", "")
@@ -475,10 +483,13 @@ async def publish_article(article_id: int, body: PublishRequest, db: Annotated[S
 
     credentials = base64.b64encode(f"{wp_username}:{wp_password}".encode()).decode()
 
+    wp_post_id = article.wp_post_id
+    url_path = f"/wp-json/wp/v2/posts/{wp_post_id}" if wp_post_id else "/wp-json/wp/v2/posts"
+
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
-                f"{wp_url.rstrip('/')}/wp-json/wp/v2/posts",
+                f"{wp_url.rstrip('/')}{url_path}",
                 json={
                     "title": article.title,
                     "content": article.content_html,

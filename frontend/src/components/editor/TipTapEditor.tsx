@@ -78,7 +78,7 @@ export default function TipTapEditor({ content, onChange, editable }: TipTapEdit
 
   useEffect(() => {
     if (!editor) return;
-    if (content !== editor.getHTML()) {
+    if (content !== editor.getHTML() && !editor.isFocused) {
       editor.commands.setContent(content, { emitUpdate: false });
     }
   }, [content, editor]);

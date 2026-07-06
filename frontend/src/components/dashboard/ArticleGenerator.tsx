@@ -145,6 +145,11 @@ export default function ArticleGenerator({ initialKeyword = "", initialH2s = [] 
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          Cookies.remove("auth_token");
+          window.location.href = "/login";
+          return;
+        }
         if (response.status === 429) {
           throw new Error("سقف درخواست‌های روزانه پر شده است. لطفاً فردا تلاش کنید.");
         }
@@ -374,7 +379,9 @@ export default function ArticleGenerator({ initialKeyword = "", initialH2s = [] 
               <div className="max-h-80 overflow-y-auto rounded-lg border border-border bg-muted p-4">
                 <div
                   className="tiptap text-right"
-                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(streamedContent) }}
+                  dangerouslySetInnerHTML={{
+                    __html: typeof window !== "undefined" ? DOMPurify.sanitize(streamedContent) : streamedContent
+                  }}
                 />
                 <span className="mr-1 inline-block h-5 w-0.5 animate-pulse bg-indigo-600" />
               </div>

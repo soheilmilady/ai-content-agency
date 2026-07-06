@@ -1,5 +1,6 @@
 import axios from "axios";
 import Cookies from "js-cookie";
+import type { ClusterData } from "@/components/seo/TopicClusterCard";
 
 export interface User {
   id: number;
@@ -193,6 +194,13 @@ export async function getSetting(key: string): Promise<{ key: string; value: str
 
 export async function updateSetting(key: string, value: string): Promise<{ key: string; value: string }> {
   const { data } = await api.put(`/settings/${key}`, { value });
+  return data;
+}
+
+export async function clusterKeywords(
+  keywords: string[]
+): Promise<{ clusters: ClusterData[] }> {
+  const { data } = await api.post("/seo/cluster", { keywords });
   return data;
 }
 

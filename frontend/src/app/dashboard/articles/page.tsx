@@ -7,6 +7,13 @@ import { FileText, Plus, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getArticles, approveArticle, publishArticle, deleteArticle, getMe, type Article, type User } from "@/lib/api";
 
+const formatDateTime = (dateString?: string | null) => {
+  if (!dateString) return "-";
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("fa-IR", { dateStyle: "short", timeStyle: "short" }).format(date);
+};
+
 export default function ArticlesPage() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
@@ -167,12 +174,17 @@ export default function ArticlesPage() {
                       {getStatusBadge(article.status)}
                     </td>
                     <td className="px-6 py-4 text-muted-foreground text-xs text-center">
-                      {new Intl.DateTimeFormat("fa-IR", { dateStyle: "short", timeStyle: "short" }).format(new Date(article.updated_at))}
+                      {formatDateTime(article.updated_at)}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-wrap items-center justify-center gap-2">
                         <Button variant="outline" size="sm" asChild>
-                          <Link href={`/dashboard/articles/${article.id}`}>مشاهده / ویرایش</Link>
+                          <Link href={`/dashboard/articles/${article.id}`}>
+                            {me?.role === "admin" || article.author.id === me?.id || (me?.role === "editor" && article.assigned_editors.some(e => e.id === me?.id))
+                              ? "مشاهده / ویرایش"
+                              : "مشاهده"
+                            }
+                          </Link>
                         </Button>
                         
                         {(me?.role === "admin" || me?.role === "editor") && article.status === 'pending_approval' && (
@@ -181,7 +193,9 @@ export default function ArticlesPage() {
                         {(me?.role === "admin" || me?.can_publish) && article.status === 'approved' && (
                            <Button size="sm" className="bg-blue-600 hover:bg-blue-500" onClick={() => handlePublish(article.id)}>انتشار</Button>
                         )}
-                        <Button size="sm" variant="destructive" onClick={() => handleDelete(article.id)}>حذف</Button>
+                        {(me?.role === "admin" || article.author.id === me?.id || (me?.role === "editor" && article.assigned_editors.some(e => e.id === me?.id))) && (
+                           <Button size="sm" variant="destructive" onClick={() => handleDelete(article.id)}>حذف</Button>
+                        )}
                       </div>
                     </td>
                   </tr>
