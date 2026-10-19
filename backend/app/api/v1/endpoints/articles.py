@@ -60,14 +60,13 @@ def _can_publish(user: User) -> bool:
 
 def _has_api_key() -> bool:
     return bool(
-        getattr(settings, "GROQ_API_KEY", None)
+        getattr(settings, "GEMINI_API_KEY", None)
+        or getattr(settings, "GROQ_API_KEY", None)
         or getattr(settings, "OPENROUTER_API_KEY", None)
     )
 
 def _default_model() -> str:
-    if getattr(settings, "GROQ_API_KEY", None):
-        return "groq/llama-3.3-70b-versatile"
-    return getattr(settings, "DEFAULT_LLM_MODEL", "openai/gpt-4o-mini")
+    return getattr(settings, "DEFAULT_LLM_MODEL", "gemini-3.7-flash")
 
 def _sse(data: dict) -> str:
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -232,7 +231,8 @@ class ArticlePipeline:
             yield _sse({"step": "error", "message": "زمان پاسخ مدل تمام شد. لطفاً دوباره تلاش کنید."})
         except Exception as exc:
             logger.error(f"Generation stream error: {exc}", exc_info=True)
-            yield _sse({"step": "error", "message": "یک خطای داخلی در سرور رخ داد. تیم فنی مطلع شد."})
+            user_msg = str(exc) if isinstance(exc, ValueError) else "یک خطای داخلی در سرور رخ داد. لطفاً دوباره تلاش کنید."
+            yield _sse({"step": "error", "message": user_msg})
 
     async def execute_no_stream(self, topic: str, keyword: str, h2_keywords: list[str] | None = None) -> Article:
         if not _has_api_key():
