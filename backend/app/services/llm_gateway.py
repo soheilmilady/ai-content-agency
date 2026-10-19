@@ -31,22 +31,22 @@ def _friendly_llm_error(model: str, exc: Exception) -> ValueError:
             "پاسخ API گوگل خالی یا نامعتبر بود. لطفاً مجدداً تلاش کنید."
         )
 
-    if "429" in message or "resource_exhausted" in message or "rate limit" in message:
+    if "api_key_invalid" in message or "invalid api key" in message:
         return ValueError(
-            "محدودیت ترافیک یا سقف توکن Google Gemini (Rate Limit). "
-            "باکِ توکن در این دقیقه پر شده است؛ لطفاً ۱۵ ثانیه دیگر مجدداً تلاش کنید."
+            "کلید Google AI Studio (Gemini API Key) در سرور Render نامعتبر است یا ثبت نشده است. "
+            "لطفاً در پنل Render -> Environment، متغیر GEMINI_API_KEY را بدون گیومه و فاصله با مقدار کلید ذخیره کنید."
         )
 
-    if (
-        "400" in message
-        or "403" in message
-        or "api_key_invalid" in message
-        or "invalid api key" in message
-        or "permission_denied" in message
-    ):
+    if "429" in message or "resource_exhausted" in message or "rate limit" in message or "quota" in message:
         return ValueError(
-            "کلید Google AI Studio (Gemini API Key) نامعتبر است یا منقضی شده است. "
-            "لطفاً متغیر GEMINI_API_KEY را در تنظیمات backend بررسی کنید."
+            f"سقف درخواست روزانه (Quota) در پلن رایگان Google AI Studio برای مدل «{model}» تکمیل شده است. "
+            "لطفاً از مدل‌های پایدار دیگر (مانند Gemini 3.7 Flash) استفاده فرمایید یا فردا تلاش کنید."
+        )
+
+    if "permission_denied" in message or "403" in message:
+        return ValueError(
+            "دسترسی به Google Gemini رد شد (403 Permission Denied). "
+            "ممکن است ریجن یا آی‌پی سرور در گوگل محدود شده باشد یا کلید دسترسی به این مدل را نداشته باشد."
         )
 
     if "404" in message or "not_found" in message:
@@ -111,7 +111,7 @@ def _build_gemini_payload(
 class LLMGateway:
     def __init__(self, model: str | None = None) -> None:
         self.model = self._resolve_model(model or settings.DEFAULT_LLM_MODEL)
-        self.fallback_model = "gemini-3.5-flash-lite"
+        self.fallback_model = "gemini-3.7-flash" if self.model != "gemini-3.7-flash" else "gemini-3.1-flash-lite"
 
     def _resolve_model(self, target_model: str) -> str:
         # پاکسازی پیشوندهای مختلف
@@ -124,12 +124,18 @@ class LLMGateway:
         return MODEL_ALIASES.get(clean, clean)
 
     def _get_api_key(self) -> str:
-        key = settings.GEMINI_API_KEY or settings.GROQ_API_KEY
-        if not key:
+        raw_key = settings.GEMINI_API_KEY or settings.GROQ_API_KEY
+        if not raw_key:
             raise ValueError(
-                "کلید GEMINI_API_KEY در فایل backend/.env تنظیم نشده است."
+                "متغیر GEMINI_API_KEY در تنظیمات سرور (Render Environment Variables) یا فایل .env تنظیم نشده است."
             )
-        return key
+        clean_key = raw_key.strip().strip('"').strip("'")
+        if clean_key.startswith("gsk_"):
+            raise ValueError(
+                "کلید تنظیم‌شده در متغیرهای محیطی متعلق به Groq (gsk_...) است! "
+                "لطفاً در پنل Render متغیر GEMINI_API_KEY را با مقدار کلید Google AI Studio جایگزین نمایید."
+            )
+        return clean_key
 
     async def generate(
         self,
