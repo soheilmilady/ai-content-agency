@@ -17,6 +17,8 @@ const formatDateTime = (dateString?: string | null) => {
 export default function ArticlesPage() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
+  const [processingId, setProcessingId] = useState<number | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [me, setMe] = useState<User | null>(null);
 
@@ -37,6 +39,8 @@ export default function ArticlesPage() {
   };
 
   const handleApprove = async (id: number) => {
+    if (processingId) return;
+    setProcessingId(id);
     try {
       setError("");
       await approveArticle(id);
@@ -45,10 +49,14 @@ export default function ArticlesPage() {
       const axiosError = err as { response?: { data?: { detail?: string | string[] } } };
       const msg = axiosError.response?.data?.detail || "خطا در تایید مقاله";
       setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setProcessingId(null);
     }
   };
 
   const handlePublish = async (id: number) => {
+    if (processingId) return;
+    setProcessingId(id);
     try {
       setError("");
       await publishArticle(id);
@@ -57,19 +65,26 @@ export default function ArticlesPage() {
       const axiosError = err as { response?: { data?: { detail?: string | string[] } } };
       const msg = axiosError.response?.data?.detail || "خطا در انتشار مقاله";
       setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setProcessingId(null);
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("آیا از حذف مقاله مطمئن هستید؟")) return;
+  const confirmDelete = async () => {
+    if (!deleteTargetId || processingId) return;
+    const id = deleteTargetId;
+    setProcessingId(id);
     try {
       setError("");
       await deleteArticle(id);
       setArticles(articles.filter(a => a.id !== id));
+      setDeleteTargetId(null);
     } catch (err) {
       const axiosError = err as { response?: { data?: { detail?: string | string[] } } };
       const msg = axiosError.response?.data?.detail || "خطا در حذف مقاله";
       setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setProcessingId(null);
     }
   };
 
@@ -188,13 +203,34 @@ export default function ArticlesPage() {
                         </Button>
                         
                         {(me?.role === "admin" || me?.role === "editor") && article.status === 'pending_approval' && (
-                           <Button size="sm" className="bg-green-600 hover:bg-green-500" onClick={() => handleApprove(article.id)}>تایید</Button>
+                           <Button 
+                             size="sm" 
+                             className="bg-green-600 hover:bg-green-500" 
+                             disabled={processingId === article.id}
+                             onClick={() => handleApprove(article.id)}
+                           >
+                             {processingId === article.id ? <Loader2 className="w-4 h-4 animate-spin" /> : "تایید"}
+                           </Button>
                         )}
                         {(me?.role === "admin" || me?.can_publish) && article.status === 'approved' && (
-                           <Button size="sm" className="bg-blue-600 hover:bg-blue-500" onClick={() => handlePublish(article.id)}>انتشار</Button>
+                           <Button 
+                             size="sm" 
+                             className="bg-blue-600 hover:bg-blue-500" 
+                             disabled={processingId === article.id}
+                             onClick={() => handlePublish(article.id)}
+                           >
+                             {processingId === article.id ? <Loader2 className="w-4 h-4 animate-spin" /> : "انتشار"}
+                           </Button>
                         )}
                         {(me?.role === "admin" || article.author.id === me?.id || (me?.role === "editor" && article.assigned_editors.some(e => e.id === me?.id))) && (
-                           <Button size="sm" variant="destructive" onClick={() => handleDelete(article.id)}>حذف</Button>
+                           <Button 
+                             size="sm" 
+                             variant="destructive" 
+                             disabled={processingId === article.id}
+                             onClick={() => setDeleteTargetId(article.id)}
+                           >
+                             {processingId === article.id ? <Loader2 className="w-4 h-4 animate-spin" /> : "حذف"}
+                           </Button>
                         )}
                       </div>
                     </td>
@@ -205,6 +241,35 @@ export default function ArticlesPage() {
           </div>
         )}
       </div>
+
+      {/* مودال تأیید حذف شیشه‌ای مدرن */}
+      {deleteTargetId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="w-full max-w-md rounded-2xl border border-border/50 bg-card p-6 shadow-2xl space-y-4">
+            <h3 className="text-lg font-bold text-foreground">تأیید حذف مقاله</h3>
+            <p className="text-sm text-muted-foreground">
+              آیا از حذف این مقاله اطمینان دارید؟ این عملیات غیرقابل بازگشت است.
+            </p>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button
+                variant="outline"
+                disabled={processingId !== null}
+                onClick={() => setDeleteTargetId(null)}
+              >
+                انصراف
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={processingId !== null}
+                onClick={confirmDelete}
+              >
+                {processingId !== null ? <Loader2 className="w-4 h-4 animate-spin ml-2" /> : null}
+                حذف مقاله
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

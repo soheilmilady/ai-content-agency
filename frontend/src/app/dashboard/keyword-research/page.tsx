@@ -83,13 +83,30 @@ export default function KeywordResearchPage() {
   // ── UI State ──
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [filterText, setFilterText] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 50;
   const [viewMode, setViewMode] = useState<"list" | "clusters">("list");
   const [clusters, setClusters] = useState<ClusterData[]>([]);
   const [isClustering, setIsClustering] = useState(false);
+  const [clusterError, setClusterError] = useState("");
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Restore clusters from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const savedClusters = sessionStorage.getItem("keyword_clusters_cache");
+      if (savedClusters) {
+        setClusters(JSON.parse(savedClusters));
+      }
+    } catch {
+      // ignore storage error
+    }
+  }, []);
 
   const handleStart = () => {
     if (!seed.trim()) return;
+    setCurrentPage(1);
+    setClusterError("");
     const config: ScrapeConfig = {
       seed: seed.trim(),
       language,
@@ -132,17 +149,24 @@ export default function KeywordResearchPage() {
     if (results.length === 0) return;
     setIsClustering(true);
     setViewMode("clusters");
+    setClusterError("");
     
     const topKeywords = results.slice(0, 50).map((r) => r.keyword);
     
     try {
       const data = await clusterKeywords(topKeywords);
-      setClusters(data.clusters || []);
+      const newClusters = data.clusters || [];
+      setClusters(newClusters);
+      try {
+        sessionStorage.setItem("keyword_clusters_cache", JSON.stringify(newClusters));
+      } catch {
+        // ignore storage error
+      }
     } catch (err) {
       console.error(err);
-      const axiosError = err as { response?: { status?: number } };
+      const axiosError = err as { response?: { status?: number; data?: { detail?: string } } };
       if (axiosError.response?.status !== 401) {
-        alert("خطا در ارتباط با هوش مصنوعی برای خوشه‌بندی معنایی.");
+        setClusterError(axiosError.response?.data?.detail || "خطا در ارتباط با هوش مصنوعی برای خوشه‌بندی معنایی.");
         setViewMode("list");
       }
     } finally {
@@ -154,6 +178,13 @@ export default function KeywordResearchPage() {
   const filteredResults = filterText
     ? results.filter((r) => r.keyword.includes(filterText.toLowerCase()))
     : results;
+
+  const totalPages = Math.max(1, Math.ceil(filteredResults.length / PAGE_SIZE));
+  const activePage = Math.min(currentPage, totalPages);
+  const paginatedResults = filteredResults.slice(
+    (activePage - 1) * PAGE_SIZE,
+    activePage * PAGE_SIZE,
+  );
 
   // ── Check if translation is applicable (non-Persian languages) ──
   const showTranslateButton = language !== "fa" && results.length > 0;
@@ -391,6 +422,17 @@ export default function KeywordResearchPage() {
       {/* ═══════ Results Table ═══════ */}
       {results.length > 0 && (
         <Card className="border-border/50 bg-card/80 backdrop-blur-sm">
+          {clusterError && (
+            <div className="mx-6 mt-4 p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-lg text-sm flex justify-between items-center">
+              <span>{clusterError}</span>
+              <button 
+                onClick={() => setClusterError("")}
+                className="text-xs hover:underline text-muted-foreground mr-2"
+              >
+                بستن
+              </button>
+            </div>
+          )}
           <CardHeader className="pb-3 border-b border-border/30 mb-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
               <div className="flex items-center gap-4">
@@ -495,128 +537,163 @@ export default function KeywordResearchPage() {
                 )}
               </div>
             ) : (
-              <div className="max-h-[600px] overflow-y-auto rounded-lg border border-border/30">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm z-10">
-                  <tr className="text-xs text-muted-foreground">
-                    <th className="text-right py-2.5 px-3 font-semibold">#</th>
-                    <th className="text-right py-2.5 px-3 font-semibold">
-                      کلمه کلیدی
-                    </th>
-                    {Object.keys(translations).length > 0 && (
-                      <th className="text-right py-2.5 px-3 font-semibold">
-                        ترجمه فارسی
-                      </th>
-                    )}
-                    <th className="text-center py-2.5 px-3 font-semibold">
-                      فرکانس
-                    </th>
-                    <th className="text-center py-2.5 px-3 font-semibold">
-                      لایه
-                    </th>
-                    <th className="text-center py-2.5 px-3 font-semibold">
-                      نوع
-                    </th>
-                    <th className="text-center py-2.5 px-3 font-semibold">
-                      اقدام
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/20">
-                  {filteredResults.map((entry, index) => {
-                    const wordCount = entry.keyword.split(/\s+/).length;
-                    const isLongTail = wordCount >= 4;
-                    return (
-                      <tr
-                        key={entry.keyword}
-                        className="hover:bg-muted/20 transition-colors"
-                      >
-                        <td className="py-2 px-3 text-muted-foreground text-xs tabular-nums">
-                          {index + 1}
-                        </td>
-                        <td className="py-2 px-3 font-medium" dir="auto">
-                          {entry.keyword}
-                        </td>
+              <>
+                <div className="max-h-[600px] overflow-y-auto rounded-lg border border-border/30">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm z-10">
+                      <tr className="text-xs text-muted-foreground">
+                        <th className="text-right py-2.5 px-3 font-semibold">#</th>
+                        <th className="text-right py-2.5 px-3 font-semibold">
+                          کلمه کلیدی
+                        </th>
                         {Object.keys(translations).length > 0 && (
-                          <td
-                            className="py-2 px-3 text-muted-foreground text-xs"
-                            dir="rtl"
-                          >
-                            {translations[entry.keyword] || "—"}
-                          </td>
+                          <th className="text-right py-2.5 px-3 font-semibold">
+                            ترجمه فارسی
+                          </th>
                         )}
-                        <td className="py-2 px-3 text-center">
-                          <Badge
-                            variant="secondary"
-                            className="tabular-nums text-xs"
-                          >
-                            {entry.count}
-                          </Badge>
-                        </td>
-                        <td className="py-2 px-3 text-center text-xs text-muted-foreground tabular-nums">
-                          L{entry.firstLayer}
-                        </td>
-                        <td className="py-2 px-3 text-center">
-                          <Badge
-                            variant={isLongTail ? "default" : "outline"}
-                            className={`text-[10px] ${
-                              isLongTail
-                                ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30"
-                                : ""
-                            }`}
-                          >
-                            {isLongTail ? "Long-Tail" : "Short"}
-                          </Badge>
-                        </td>
-                        <td className="py-2 px-3 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            {/* Copy */}
-                            <button
-                              type="button"
-                              title="کپی"
-                              onClick={() =>
-                                handleCopy(entry.keyword, index)
-                              }
-                              className="p-1.5 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
-                            >
-                              {copiedIndex === index ? (
-                                <span className="text-[10px] text-green-500 font-bold">
-                                  ✓
-                                </span>
-                              ) : (
-                                <Copy className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-
-                            {/* Open in Google */}
-                            <button
-                              type="button"
-                              title="جستجو در گوگل"
-                              onClick={() => handleOpenGoogle(entry.keyword)}
-                              className="p-1.5 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </button>
-
-                            {/* ✨ Magic Bridge: Generate AI Article */}
-                            <button
-                              type="button"
-                              title="✨ تولید مقاله AI"
-                              onClick={() =>
-                                handleGenerateArticle(entry.keyword)
-                              }
-                              className="p-1.5 rounded-md hover:bg-primary/10 transition-colors text-primary hover:text-primary"
-                            >
-                              <Sparkles className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
+                        <th className="text-center py-2.5 px-3 font-semibold">
+                          فرکانس
+                        </th>
+                        <th className="text-center py-2.5 px-3 font-semibold">
+                          لایه
+                        </th>
+                        <th className="text-center py-2.5 px-3 font-semibold">
+                          نوع
+                        </th>
+                        <th className="text-center py-2.5 px-3 font-semibold">
+                          اقدام
+                        </th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody className="divide-y divide-border/20">
+                      {paginatedResults.map((entry, index) => {
+                        const itemNumber = (activePage - 1) * PAGE_SIZE + index + 1;
+                        const wordCount = entry.keyword.split(/\s+/).length;
+                        const isLongTail = wordCount >= 4;
+                        return (
+                          <tr
+                            key={entry.keyword}
+                            className="hover:bg-muted/20 transition-colors"
+                          >
+                            <td className="py-2 px-3 text-muted-foreground text-xs tabular-nums">
+                              {itemNumber}
+                            </td>
+                            <td className="py-2 px-3 font-medium" dir="auto">
+                              {entry.keyword}
+                            </td>
+                            {Object.keys(translations).length > 0 && (
+                              <td
+                                className="py-2 px-3 text-muted-foreground text-xs"
+                                dir="rtl"
+                              >
+                                {translations[entry.keyword] || "—"}
+                              </td>
+                            )}
+                            <td className="py-2 px-3 text-center">
+                              <Badge
+                                variant="secondary"
+                                className="tabular-nums text-xs"
+                              >
+                                {entry.count}
+                              </Badge>
+                            </td>
+                            <td className="py-2 px-3 text-center text-xs text-muted-foreground tabular-nums">
+                              L{entry.firstLayer}
+                            </td>
+                            <td className="py-2 px-3 text-center">
+                              <Badge
+                                variant={isLongTail ? "default" : "outline"}
+                                className={`text-[10px] ${
+                                  isLongTail
+                                    ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30"
+                                    : ""
+                                }`}
+                              >
+                                {isLongTail ? "Long-Tail" : "Short"}
+                              </Badge>
+                            </td>
+                            <td className="py-2 px-3 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                {/* Copy */}
+                                <button
+                                  type="button"
+                                  title="کپی"
+                                  onClick={() =>
+                                    handleCopy(entry.keyword, itemNumber - 1)
+                                  }
+                                  className="p-1.5 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+                                >
+                                  {copiedIndex === itemNumber - 1 ? (
+                                    <span className="text-[10px] text-green-500 font-bold">
+                                      ✓
+                                    </span>
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+
+                                {/* Open in Google */}
+                                <button
+                                  type="button"
+                                  title="جستجو در گوگل"
+                                  onClick={() => handleOpenGoogle(entry.keyword)}
+                                  className="p-1.5 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* ✨ Magic Bridge: Generate AI Article */}
+                                <button
+                                  type="button"
+                                  title="✨ تولید مقاله AI"
+                                  onClick={() =>
+                                    handleGenerateArticle(entry.keyword)
+                                  }
+                                  className="p-1.5 rounded-md hover:bg-primary/10 transition-colors text-primary hover:text-primary"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination Bar */}
+                {totalPages > 1 && (
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border border-border/30 bg-muted/10 text-xs mt-3 rounded-lg">
+                    <div className="text-muted-foreground">
+                      نمایش {(activePage - 1) * PAGE_SIZE + 1} تا {Math.min(activePage * PAGE_SIZE, filteredResults.length)} از {filteredResults.length} کلمه
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={activePage <= 1}
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        className="h-8 text-xs"
+                      >
+                        قبلی
+                      </Button>
+                      <span className="tabular-nums font-semibold px-2">
+                        صفحه {activePage} از {totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={activePage >= totalPages}
+                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                        className="h-8 text-xs"
+                      >
+                        بعدی
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>

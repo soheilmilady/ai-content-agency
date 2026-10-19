@@ -37,8 +37,9 @@ export default function ArticleDetailPage({ params }: { params: { id: string } }
   // AI Improve State
   const [showAiModal, setShowAiModal] = useState(false);
   const [instruction, setInstruction] = useState("");
-  const [model, setModel] = useState("openai/gpt-4o-mini");
+  const [model, setModel] = useState("gemini-3.5-flash");
   const [improving, setImproving] = useState(false);
+  const [aiModalError, setAiModalError] = useState("");
   const [previewData, setPreviewData] = useState<{ new_html: string; new_seo_score: number; old_seo_score: number } | null>(null);
 
   // Assign Editors State
@@ -87,15 +88,17 @@ export default function ArticleDetailPage({ params }: { params: { id: string } }
   const handleAiImprovePreview = async () => {
     setImproving(true);
     setPreviewData(null);
+    setAiModalError("");
     try {
       const data = await improveArticlePreview(articleId, instruction, model);
       setPreviewData(data);
     } catch (err: unknown) {
-      const axiosError = err as { response?: { status?: number } };
+      const axiosError = err as { response?: { status?: number; data?: { detail?: string } } };
       if (axiosError.response?.status === 429) {
-        alert("سقف درخواست‌های روزانه پر شده است. لطفاً فردا تلاش کنید.");
+        setAiModalError("سقف درخواست‌های روزانه پر شده است. لطفاً فردا تلاش کنید.");
       } else {
-        alert("خطا در ارتباط با هوش مصنوعی.");
+        const detailMsg = axiosError.response?.data?.detail;
+        setAiModalError(detailMsg || "خطا در ارتباط با هوش مصنوعی. لطفاً مجدداً تلاش کنید.");
       }
     } finally {
       setImproving(false);
@@ -253,11 +256,20 @@ export default function ArticleDetailPage({ params }: { params: { id: string } }
               <div className="space-y-2">
                 <Label>مدل هوش مصنوعی</Label>
                 <select className="w-full border p-2 rounded-md" value={model} onChange={(e) => setModel(e.target.value)}>
-                  <option value="openai/gpt-4o-mini">GPT-4o Mini (سریع و اقتصادی)</option>
-                  <option value="openai/gpt-4o">GPT-4o (قدرتمند و دقیق)</option>
-                  <option value="groq/llama-3.3-70b-versatile">Llama 3.3 70B (ارزان)</option>
+                  <option value="gemini-3.8-flash">Gemini 3.8 Flash (جدیدترین مدل گوگل)</option>
+                  <option value="gemini-3.7-flash">Gemini 3.7 Flash (استدلال پیشرفته)</option>
+                  <option value="gemini-3.6-flash">Gemini 3.6 Flash (بالاترین کیفیت و سرعت)</option>
+                  <option value="gemini-3.5-flash">Gemini 3.5 Flash (پایدار و هوشمند)</option>
+                  <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (فوق‌العاده سریع)</option>
+                  <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (اقتصادی)</option>
                 </select>
               </div>
+
+              {aiModalError && (
+                <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-lg text-sm">
+                  {aiModalError}
+                </div>
+              )}
 
               {!previewData ? (
                 <Button onClick={handleAiImprovePreview} disabled={improving} className="w-full bg-indigo-600 hover:bg-indigo-500">
@@ -287,7 +299,7 @@ export default function ArticleDetailPage({ params }: { params: { id: string } }
                     <div 
                       className="prose prose-sm border p-4 max-h-60 overflow-y-auto rounded-md bg-muted/30"
                       dangerouslySetInnerHTML={{
-                        __html: typeof window !== "undefined" ? DOMPurify.sanitize(previewData.new_html) : previewData.new_html
+                        __html: DOMPurify.sanitize(previewData.new_html)
                       }}
                     />
                   </div>
@@ -301,7 +313,7 @@ export default function ArticleDetailPage({ params }: { params: { id: string } }
             </div>
             
             <div className="flex justify-end pt-4 border-t">
-              <Button variant="ghost" onClick={() => setShowAiModal(false)}>بستن</Button>
+              <Button variant="ghost" onClick={() => { setShowAiModal(false); setAiModalError(""); }}>بستن</Button>
             </div>
           </div>
         </div>

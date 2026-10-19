@@ -12,6 +12,8 @@ export interface User {
   created_at: string;
 }
 
+export type ArticleStatus = "draft" | "pending_approval" | "approved" | "published";
+
 export interface Article {
   id: number;
   title: string;
@@ -19,7 +21,7 @@ export interface Article {
   meta_description: string;
   focus_keyword: string;
   seo_score: number;
-  status: string;
+  status: ArticleStatus | string;
   author: { id: number; username: string };
   last_modified_by?: { id: number; username: string } | null;
   assigned_editors: { id: number; username: string }[];
@@ -72,7 +74,11 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && typeof window !== "undefined") {
+    if (
+      error.response?.status === 401 &&
+      typeof window !== "undefined" &&
+      window.location.pathname !== "/login"
+    ) {
       Cookies.remove("auth_token");
       window.location.href = "/login";
     }

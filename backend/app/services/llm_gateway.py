@@ -1,12 +1,26 @@
 import asyncio
 import json
+import logging
 from collections.abc import AsyncGenerator
+from typing import Any
 
-import litellm
-from litellm import acompletion
-from litellm.exceptions import RateLimitError
+import httpx
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+# نگاشت مدل‌های قدیمی به جدیدترین مدل‌های پایدار گوگل جمینای
+MODEL_ALIASES: dict[str, str] = {
+    "llama-3.3-70b-versatile": "gemini-3.5-flash",
+    "llama-3.1-8b-instant": "gemini-3.5-flash-lite",
+    "meta-llama/llama-4-scout-17b-16e-instruct": "gemini-3.1-flash-lite",
+    "llama-3.1-70b-versatile": "gemini-3.5-flash",
+    "gemini-2.5-flash": "gemini-3.5-flash",
+    "gemini-2.5-pro": "gemini-3.5-flash",
+}
+
+API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 
 def _friendly_llm_error(model: str, exc: Exception) -> ValueError:
@@ -14,63 +28,108 @@ def _friendly_llm_error(model: str, exc: Exception) -> ValueError:
 
     if isinstance(exc, json.JSONDecodeError):
         return ValueError(
-            "پاسخ API Groq خالی یا نامعتبر بود. "
-            "backend را restart کنید و کلید GROQ_API_KEY را بررسی کنید."
+            "پاسخ API گوگل خالی یا نامعتبر بود. لطفاً مجدداً تلاش کنید."
         )
 
-    if "decommissioned" in message or "model_decommissioned" in message:
+    if "429" in message or "resource_exhausted" in message or "rate limit" in message:
         return ValueError(
-            f"مدل «{model}» دیگر در Groq پشتیبانی نمی‌شود. "
-            "مدل Llama 3.3 70B یا Llama 3.1 8B را انتخاب کنید."
+            "محدودیت ترافیک یا سقف توکن Google Gemini (Rate Limit). "
+            "باکِ توکن در این دقیقه پر شده است؛ لطفاً ۱۵ ثانیه دیگر مجدداً تلاش کنید."
         )
 
-    if "invalid api key" in message or "invalid_api_key" in message:
+    if (
+        "400" in message
+        or "403" in message
+        or "api_key_invalid" in message
+        or "invalid api key" in message
+        or "permission_denied" in message
+    ):
         return ValueError(
-            "کلید Groq نامعتبر است. در console.groq.com کلید را بررسی کنید."
+            "کلید Google AI Studio (Gemini API Key) نامعتبر است یا منقضی شده است. "
+            "لطفاً متغیر GEMINI_API_KEY را در تنظیمات backend بررسی کنید."
         )
 
-    if "rate limit" in message or "429" in message or "413" in message:
+    if "404" in message or "not_found" in message:
         return ValueError(
-            "محدودیت ترافیک Groq (Rate Limit). باکِ توکن در این دقیقه پر شده است؛ لطفاً ۱۵ ثانیه دیگر مجدداً کلیک کنید."
+            f"مدل «{model}» در Google Gemini یافت نشد یا از دسترس خارج شده است."
         )
 
-    if "must contain the word 'json'" in message:
+    if "503" in message or "500" in message or "unavailable" in message:
         return ValueError(
-            "خطای JSON mode از Groq. لطفاً backend را restart کنید."
+            "سرویس هوش مصنوعی گوگل موقتاً با بار کاری بالا مواجه است. چند ثانیه دیگر تلاش کنید."
         )
 
-    return ValueError(f"خطای Groq ({model}): {exc}")
+    return ValueError(f"خطای Google Gemini ({model}): {exc}")
+
+
+def _build_gemini_payload(
+    messages: list[dict[str, Any]],
+    json_mode: bool = False,
+    max_tokens: int | None = None,
+) -> dict[str, Any]:
+    system_parts: list[str] = []
+    contents: list[dict[str, Any]] = []
+
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if not content:
+            continue
+
+        if role == "system":
+            system_parts.append(str(content))
+        elif role == "assistant":
+            contents.append({"role": "model", "parts": [{"text": str(content)}]})
+        else:
+            contents.append({"role": "user", "parts": [{"text": str(content)}]})
+
+    # در صورتی که محتوایی نباشد، یک پرامپت خالی قرار می‌دهیم تا ارور ندهد
+    if not contents:
+        contents.append({"role": "user", "parts": [{"text": "Hello"}]})
+
+    payload: dict[str, Any] = {"contents": contents}
+
+    if system_parts:
+        combined_system = "\n\n".join(system_parts).strip()
+        payload["system_instruction"] = {
+            "parts": [{"text": combined_system}]
+        }
+
+    generation_config: dict[str, Any] = {
+        "temperature": 0.25 if json_mode else 0.45,
+    }
+    if max_tokens:
+        generation_config["maxOutputTokens"] = max_tokens
+
+    if json_mode:
+        generation_config["responseMimeType"] = "application/json"
+
+    payload["generationConfig"] = generation_config
+    return payload
 
 
 class LLMGateway:
     def __init__(self, model: str | None = None) -> None:
-        self.model = model or settings.DEFAULT_LLM_MODEL
-        self.fallback_model = "llama-3.1-8b-instant"
+        self.model = self._resolve_model(model or settings.DEFAULT_LLM_MODEL)
+        self.fallback_model = "gemini-3.5-flash-lite"
 
     def _resolve_model(self, target_model: str) -> str:
-        if target_model.startswith("groq/"):
-            return target_model
-        return f"groq/{target_model}"
+        # پاکسازی پیشوندهای مختلف
+        clean = (
+            target_model.replace("groq/", "")
+            .replace("gemini/", "")
+            .replace("google/", "")
+            .strip()
+        )
+        return MODEL_ALIASES.get(clean, clean)
 
-    def _completion_kwargs(
-        self,
-        target_model: str,
-        messages: list[dict],
-        stream: bool,
-        json_mode: bool,
-        dynamic_token_ceiling: int,
-    ) -> dict:
-        kwargs: dict = {
-            "model": self._resolve_model(target_model),
-            "messages": messages,
-            "api_key": settings.GROQ_API_KEY,
-            "stream": stream,
-            "temperature": 0.45,
-            "max_tokens": dynamic_token_ceiling,
-        }
-        if json_mode:
-            kwargs["response_format"] = {"type": "json_object"}
-        return kwargs
+    def _get_api_key(self) -> str:
+        key = settings.GEMINI_API_KEY or settings.GROQ_API_KEY
+        if not key:
+            raise ValueError(
+                "کلید GEMINI_API_KEY در فایل backend/.env تنظیم نشده است."
+            )
+        return key
 
     async def generate(
         self,
@@ -78,8 +137,7 @@ class LLMGateway:
         stream: bool = False,
         json_mode: bool = False,
     ) -> str | AsyncGenerator[str, None]:
-        if not settings.GROQ_API_KEY:
-            raise ValueError("کلید GROQ_API_KEY در backend تنظیم نشده است.")
+        api_key = self._get_api_key()
 
         if stream:
             return self._stream(messages, json_mode)
@@ -87,104 +145,94 @@ class LLMGateway:
         active_model = self.model
         max_attempts = 2
 
-        # محاسبه‌ی سقفِ رزروِ ارگانیک برای دور زدنِ ارور 413
-        allocated_ceiling = 750 if json_mode else 550
-
         for attempt in range(max_attempts + 1):
             try:
-                await asyncio.sleep(1.2)
-                response = await acompletion(
-                    **self._completion_kwargs(
-                        active_model, messages, False, json_mode, allocated_ceiling
-                    )
-                )
-                content = response.choices[0].message.content
-                if not content or not str(content).strip():
-                    raise ValueError(f"مدل {active_model} پاسخ خالی داد.")
-                return str(content)
+                url = f"{API_BASE_URL}/{active_model}:generateContent?key={api_key}"
+                payload = _build_gemini_payload(messages, json_mode=json_mode)
 
-            except (RateLimitError, Exception) as exc:
-                err_str = str(exc).lower()
-                is_rate_limit = (
-                    isinstance(exc, RateLimitError)
-                    or "429" in err_str
-                    or "413" in err_str
-                    or "rate limit" in err_str
-                )
+                async with httpx.AsyncClient(timeout=45.0) as client:
+                    response = await client.post(url, json=payload)
 
-                if is_rate_limit:
-                    if attempt == max_attempts:
-                        if active_model != self.fallback_model:
+                if response.status_code == 200:
+                    data = response.json()
+                    candidates = data.get("candidates", [])
+                    if not candidates:
+                        raise ValueError(f"مدل {active_model} هیچ کاندیدی برای پاسخ ارائه نداد.")
+
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if not parts or "text" not in parts[0]:
+                        raise ValueError(f"مدل {active_model} پاسخ متنی خالی داد.")
+
+                    return str(parts[0]["text"]).strip()
+
+                # در صورت خطای نرخ ترافیک یا در دسترس نبودن
+                err_text = response.text
+                if response.status_code in (429, 503) or "resource_exhausted" in err_text.lower():
+                    if attempt < max_attempts:
+                        await asyncio.sleep(2.0 * (attempt + 1))
+                        # در آخرین تلاش از مدل فال‌بک سبک استفاده کن
+                        if attempt == max_attempts - 1 and active_model != self.fallback_model:
                             active_model = self.fallback_model
-                            await asyncio.sleep(4.0)
-                            try:
-                                fallback_res = await acompletion(
-                                    **self._completion_kwargs(
-                                        active_model,
-                                        messages,
-                                        False,
-                                        json_mode,
-                                        allocated_ceiling,
-                                    )
-                                )
-                                return str(
-                                    fallback_res.choices[0].message.content or ""
-                                )
-                            except Exception as fallback_exc:
-                                raise _friendly_llm_error(
-                                    active_model, fallback_exc
-                                ) from fallback_exc
+                        continue
 
-                    await asyncio.sleep((attempt + 1) * 3.0)
+                raise _friendly_llm_error(active_model, Exception(f"HTTP {response.status_code}: {err_text}"))
+
+            except Exception as exc:
+                if attempt < max_attempts and ("timeout" in str(exc).lower() or "503" in str(exc)):
+                    await asyncio.sleep(2.0 * (attempt + 1))
+                    active_model = self.fallback_model
                     continue
-
                 raise _friendly_llm_error(active_model, exc) from exc
 
         return ""
 
-
     async def _stream(
         self, messages: list[dict], json_mode: bool
     ) -> AsyncGenerator[str, None]:
+        api_key = self._get_api_key()
         active_model = self.model
-        response = None
-        allocated_ceiling = 750 if json_mode else 550
+        max_attempts = 2
 
-        for attempt in range(2):
+        for attempt in range(max_attempts):
+            url = f"{API_BASE_URL}/{active_model}:streamGenerateContent?alt=sse&key={api_key}"
+            payload = _build_gemini_payload(messages, json_mode=json_mode)
+
             try:
-                await asyncio.sleep(1.0)
-                response = await litellm.acompletion(
-                    **self._completion_kwargs(
-                        active_model, messages, True, json_mode, allocated_ceiling
-                    )
-                )
-                break
-            except (RateLimitError, Exception) as exc:
-                err_str = str(exc).lower()
-                if (
-                    isinstance(exc, RateLimitError)
-                    or "429" in err_str
-                    or "413" in err_str
-                    or "rate limit" in err_str
-                ):
-                    if attempt == 0 and active_model != self.fallback_model:
-                        active_model = self.fallback_model
-                        await asyncio.sleep(3.0)
-                        continue
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    async with client.stream("POST", url, json=payload) as response:
+                        if response.status_code != 200:
+                            err_body = await response.aread()
+                            err_msg = err_body.decode(errors="ignore")
+                            if response.status_code in (429, 503) and attempt == 0:
+                                active_model = self.fallback_model
+                                await asyncio.sleep(1.5)
+                                continue
+                            raise _friendly_llm_error(
+                                active_model,
+                                Exception(f"HTTP {response.status_code}: {err_msg}"),
+                            )
+
+                        async for line in response.aiter_lines():
+                            if line.startswith("data: "):
+                                raw_json = line[6:].strip()
+                                if not raw_json or raw_json == "[DONE]":
+                                    continue
+                                try:
+                                    chunk = json.loads(raw_json)
+                                    candidates = chunk.get("candidates", [])
+                                    if candidates:
+                                        parts = candidates[0].get("content", {}).get("parts", [])
+                                        for part in parts:
+                                            text = part.get("text")
+                                            if text:
+                                                yield text
+                                except Exception as json_err:
+                                    logger.debug(f"Chunk JSON parse error: {json_err}")
+                        return
+
+            except Exception as exc:
+                if attempt == 0 and active_model != self.fallback_model:
+                    active_model = self.fallback_model
                     await asyncio.sleep(2.0)
-                else:
-                    raise _friendly_llm_error(active_model, exc) from exc
-
-        if not response:
-            raise ValueError("ترافیکِ Groq بالاست؛ لطفاً چند ثانیه دیگر تلاش کنید.")
-
-        try:
-            async for chunk in response:
-                delta = chunk.choices[0].delta.content
-                if delta:
-                    yield delta
-        except Exception as exc:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Error during LLM streaming: {exc}", exc_info=True)
-            raise
+                    continue
+                raise _friendly_llm_error(active_model, exc) from exc

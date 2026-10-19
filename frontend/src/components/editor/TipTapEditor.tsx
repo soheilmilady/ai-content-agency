@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -56,6 +56,8 @@ function Toolbar({ editor }: { editor: Editor }) {
 }
 
 export default function TipTapEditor({ content, onChange, editable }: TipTapEditorProps) {
+  const lastContentRef = useRef(content);
+
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -72,13 +74,17 @@ export default function TipTapEditor({ content, onChange, editable }: TipTapEdit
       },
     },
     onUpdate: ({ editor: ed }) => {
-      onChange(ed.getHTML());
+      const html = ed.getHTML();
+      lastContentRef.current = html;
+      onChange(html);
     },
   });
 
   useEffect(() => {
     if (!editor) return;
-    if (content !== editor.getHTML() && !editor.isFocused) {
+    // فقط در صورتی که محتوای خارجی تغییر کرده باشد (نه تغییرات داخلی ادیتور)
+    if (content !== lastContentRef.current && content !== editor.getHTML()) {
+      lastContentRef.current = content;
       editor.commands.setContent(content, { emitUpdate: false });
     }
   }, [content, editor]);

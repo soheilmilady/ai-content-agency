@@ -9,7 +9,7 @@ from app.services.web_researcher import WebResearcher
 async def main() -> None:
     topic = "راهنمای سئو محتوا"
     keyword = "سئو محتوا"
-    llm = LLMGateway(model="llama-3.3-70b-versatile")
+    llm = LLMGateway(model="gemini-3.5-flash")
     researcher = WebResearcher()
     generator = SEOGenerator(llm)
     critic = SEOCritic(llm)
@@ -23,9 +23,12 @@ async def main() -> None:
         for section in outline.get("sections", []):
             html = await generator.draft_section(
                 section["h2"],
+                section.get("h3", []),
                 section.get("key_points", []),
                 keyword,
                 outline.get("lsi_keywords", []),
+                research.get("domain_glossary", {}),
+                research.get("facts", []),
             )
             sections_html.append(html)
         parts = [f"<h1>{outline['h1']}</h1>"]

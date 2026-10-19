@@ -10,12 +10,13 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
     BOOTSTRAP_ADMIN_EMAIL: str = "admin@agency.com"
     BOOTSTRAP_ADMIN_PASSWORD: str = "Admin1234!"
+    GEMINI_API_KEY: str = ""
     GROQ_API_KEY: str = ""
     SERPER_API_KEY: str = ""
     WP_URL: str = ""
     WP_USERNAME: str = ""
     WP_APP_PASSWORD: str = ""
-    DEFAULT_LLM_MODEL: str = "llama-3.3-70b-versatile"
+    DEFAULT_LLM_MODEL: str = "gemini-3.6-flash"
     SECTION_DELAY_SECONDS: float = 3.0
     ALLOWED_ORIGINS: str = "http://localhost:3000,https://ai-content-agency.vercel.app"
 

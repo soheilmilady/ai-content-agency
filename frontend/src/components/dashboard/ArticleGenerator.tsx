@@ -31,19 +31,34 @@ const API_URL =
 
 export const AI_MODELS = [
   {
-    value: "llama-3.3-70b-versatile",
-    label: "Ultra Quality — Llama 3.3 70B",
-    description: "بهترین کیفیت برای مقالات مهم",
+    value: "gemini-3.8-flash",
+    label: "Flagship — Gemini 3.8 Flash",
+    description: "جدیدترین و پیشرفته‌ترین مدل هوش مصنوعی گوگل",
   },
   {
-    value: "llama-3.1-8b-instant",
-    label: "Standard — Llama 3.1 8B",
-    description: "سریع و مناسب بلاگ روزانه",
+    value: "gemini-3.7-flash",
+    label: "Advanced — Gemini 3.7 Flash",
+    description: "مدل فوق‌العاده هوشمند با استدلال تحلیلی بالا",
   },
   {
-    value: "meta-llama/llama-4-scout-17b-16e-instruct",
-    label: "Economy — Llama 4 Scout 17B",
-    description: "مدل جایگزین اقتصادی",
+    value: "gemini-3.6-flash",
+    label: "Balanced Pro — Gemini 3.6 Flash",
+    description: "کیفیت عالی، درک عمیق مفهومی و سرعت بالا",
+  },
+  {
+    value: "gemini-3.5-flash",
+    label: "Stable High Quality — Gemini 3.5 Flash",
+    description: "بهترین پایداری و عملکرد اثبات‌شده برای سئو",
+  },
+  {
+    value: "gemini-3.5-flash-lite",
+    label: "Fast & Efficient — Gemini 3.5 Flash Lite",
+    description: "سرعت فوق‌العاده بالا، مناسب برای بلاگ روزانه",
+  },
+  {
+    value: "gemini-3.1-flash-lite",
+    label: "Economy — Gemini 3.1 Flash Lite",
+    description: "مدل سبک و اقتصادی برای پیش‌نویس اولیه",
   },
 ];
 
@@ -165,6 +180,7 @@ export default function ArticleGenerator({ initialKeyword = "", initialH2s = [] 
       let buffer = "";
       let accumulated = "";
       let streamError = "";
+      let receivedDone = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -190,6 +206,7 @@ export default function ArticleGenerator({ initialKeyword = "", initialH2s = [] 
           }
 
           if (event.step === "done") {
+            receivedDone = true;
             setArticleId(event.article_id ?? null);
             setSeoScore(event.seo_score ?? null);
             setMetaDescription(event.meta_description ?? "");
@@ -197,6 +214,15 @@ export default function ArticleGenerator({ initialKeyword = "", initialH2s = [] 
             setShowPreview(true);
             setStepMessage("تولید محتوا با موفقیت انجام شد.");
           }
+        }
+      }
+
+      // در صورتی که استریم بدون رویداد done پایان یافت اما متنی تولید شده بود، به ادیتور منتقل شود
+      if (!receivedDone && accumulated.trim()) {
+        setEditorContent(accumulated);
+        setShowPreview(true);
+        if (!streamError) {
+          setStepMessage("استریم محتوا به پایان رسید. پیش‌نویس آماده بازبینی است.");
         }
       }
 
