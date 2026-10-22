@@ -17,7 +17,7 @@ import {
 
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
-import { getMe, type User } from "@/lib/api";
+import { getMe, logout, type User } from "@/lib/api";
 
 const navItems = [
   { href: "/dashboard", label: "داشبورد", icon: LayoutDashboard },
@@ -50,8 +50,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       .finally(() => setLoading(false));
   }, [router]);
 
-  function handleLogout() {
-    Cookies.remove("auth_token");
+  async function handleLogout() {
+    await logout();
     router.replace("/login");
   }
 

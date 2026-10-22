@@ -1,25 +1,31 @@
-from typing import Annotated
 import json
-from fastapi import APIRouter, Depends, HTTPException
+import logging
+from typing import Annotated
 
+from fastapi import APIRouter, Depends, HTTPException, Request
 from app.api.v1.deps import get_current_user
+from app.core.limiter import limiter, get_dynamic_daily_limit
 from app.models.user import User
 from app.schemas.seo import ClusterRequest, ClusterResponse
-from app.services.llm_gateway import LLMGateway
 from app.services.json_utils import parse_json_response
+from app.services.llm_gateway import LLMGateway
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
+
 @router.post("/cluster", response_model=ClusterResponse)
+@limiter.limit(get_dynamic_daily_limit)
 async def cluster_keywords(
-    request: ClusterRequest,
+    request: Request,
+    body: ClusterRequest,
     current_user: Annotated[User, Depends(get_current_user)],
 ):
-    if not request.keywords:
+    if not body.keywords:
         raise HTTPException(status_code=400, detail="Keywords list cannot be empty")
-        
+
     llm = LLMGateway()
-    
+
     prompt = (
         "تو یک استراتژیست ارشد سئو (SEO Strategist) هستی.\n"
         "لیستی از کلمات کلیدی کشف شده به تو داده می‌شود. وظیفه تو خوشه‌بندی معنایی (Topic Clustering) این کلمات برای جلوگیری از Keyword Cannibalization است.\n"
@@ -41,15 +47,19 @@ async def cluster_keywords(
         "  ]\n"
         "}"
     )
-    
+
     messages = [
         {"role": "system", "content": prompt},
-        {"role": "user", "content": json.dumps(request.keywords, ensure_ascii=False)}
+        {"role": "user", "content": json.dumps(body.keywords, ensure_ascii=False)},
     ]
-    
+
     try:
         raw_json = await llm.generate(messages, json_mode=True)
         parsed = parse_json_response(raw_json)
         return ClusterResponse(**parsed)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to cluster keywords: {str(e)}")
+        logger.error(f"Failed to cluster keywords: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="خطا در پردازش و خوشه‌بندی کلمات کلیدی توسط هوش مصنوعی. لطفاً مجدداً تلاش کنید."
+        )

@@ -98,66 +98,59 @@ def _build_gemini_payload(
     generation_config: dict[str, Any] = {
         "temperature": 0.25 if json_mode else 0.45,
     }
-    if max_tokens:
-        generation_config["maxOutputTokens"] = max_tokens
 
     if json_mode:
-        generation_config["responseMimeType"] = "application/json"
+        generation_config["response_mime_type"] = "application/json"
+
+    if max_tokens is not None:
+        generation_config["max_output_tokens"] = max_tokens
 
     payload["generationConfig"] = generation_config
     return payload
 
 
 class LLMGateway:
-    def __init__(self, model: str | None = None) -> None:
-        self.model = self._resolve_model(model or settings.DEFAULT_LLM_MODEL)
-        self.fallback_model = "gemini-3.7-flash" if self.model != "gemini-3.7-flash" else "gemini-3.1-flash-lite"
-
-    def _resolve_model(self, target_model: str) -> str:
-        # پاکسازی پیشوندهای مختلف
-        clean = (
-            target_model.replace("groq/", "")
-            .replace("gemini/", "")
-            .replace("google/", "")
-            .strip()
-        )
-        return MODEL_ALIASES.get(clean, clean)
+    def __init__(self, model: str | None = None):
+        raw_model = model or getattr(settings, "DEFAULT_LLM_MODEL", "gemini-3.7-flash")
+        self.model = MODEL_ALIASES.get(raw_model, raw_model)
+        self.fallback_model = "gemini-3.5-flash"
 
     def _get_api_key(self) -> str:
-        raw_key = settings.GEMINI_API_KEY or settings.GROQ_API_KEY
-        if not raw_key:
+        api_key = getattr(settings, "GEMINI_API_KEY", "").strip("\"' \t\r\n")
+        if not api_key:
             raise ValueError(
-                "متغیر GEMINI_API_KEY در تنظیمات سرور (Render Environment Variables) یا فایل .env تنظیم نشده است."
+                "متغیر محیطی GEMINI_API_KEY تنظیم نشده است. "
+                "لطفاً کلید API را از Google AI Studio دریافت و در فایل .env یا تنظیمات سرور ثبت کنید."
             )
-        clean_key = raw_key.strip().strip('"').strip("'")
-        if clean_key.startswith("gsk_"):
-            raise ValueError(
-                "کلید تنظیم‌شده در متغیرهای محیطی متعلق به Groq (gsk_...) است! "
-                "لطفاً در پنل Render متغیر GEMINI_API_KEY را با مقدار کلید Google AI Studio جایگزین نمایید."
-            )
-        return clean_key
+        return api_key
 
     async def generate(
         self,
         messages: list[dict],
-        stream: bool = False,
         json_mode: bool = False,
-    ) -> str | AsyncGenerator[str, None]:
-        api_key = self._get_api_key()
-
+        stream: bool = False,
+    ) -> Any:
         if stream:
             return self._stream(messages, json_mode)
+        return await self._generate_no_stream(messages, json_mode)
 
+    async def _generate_no_stream(self, messages: list[dict], json_mode: bool) -> str:
+        api_key = self._get_api_key()
         active_model = self.model
         max_attempts = 2
 
         for attempt in range(max_attempts + 1):
             try:
-                url = f"{API_BASE_URL}/{active_model}:generateContent?key={api_key}"
+                # Security: Pass API key via x-goog-api-key header instead of URL query parameter
+                url = f"{API_BASE_URL}/{active_model}:generateContent"
+                headers = {
+                    "x-goog-api-key": api_key,
+                    "Content-Type": "application/json",
+                }
                 payload = _build_gemini_payload(messages, json_mode=json_mode)
 
                 async with httpx.AsyncClient(timeout=45.0) as client:
-                    response = await client.post(url, json=payload)
+                    response = await client.post(url, headers=headers, json=payload)
 
                 if response.status_code == 200:
                     data = response.json()
@@ -200,12 +193,17 @@ class LLMGateway:
         max_attempts = 2
 
         for attempt in range(max_attempts):
-            url = f"{API_BASE_URL}/{active_model}:streamGenerateContent?alt=sse&key={api_key}"
+            # Security: Pass API key via x-goog-api-key header instead of URL query parameter
+            url = f"{API_BASE_URL}/{active_model}:streamGenerateContent?alt=sse"
+            headers = {
+                "x-goog-api-key": api_key,
+                "Content-Type": "application/json",
+            }
             payload = _build_gemini_payload(messages, json_mode=json_mode)
 
             try:
                 async with httpx.AsyncClient(timeout=60.0) as client:
-                    async with client.stream("POST", url, json=payload) as response:
+                    async with client.stream("POST", url, headers=headers, json=payload) as response:
                         if response.status_code != 200:
                             err_body = await response.aread()
                             err_msg = err_body.decode(errors="ignore")
@@ -223,22 +221,21 @@ class LLMGateway:
                                 raw_json = line[6:].strip()
                                 if not raw_json or raw_json == "[DONE]":
                                     continue
+
                                 try:
                                     chunk = json.loads(raw_json)
                                     candidates = chunk.get("candidates", [])
                                     if candidates:
                                         parts = candidates[0].get("content", {}).get("parts", [])
-                                        for part in parts:
-                                            text = part.get("text")
-                                            if text:
-                                                yield text
-                                except Exception as json_err:
-                                    logger.debug(f"Chunk JSON parse error: {json_err}")
-                        return
+                                        if parts and "text" in parts[0]:
+                                            yield parts[0]["text"]
+                                except json.JSONDecodeError:
+                                    continue
+                return
 
             except Exception as exc:
-                if attempt == 0 and active_model != self.fallback_model:
-                    active_model = self.fallback_model
+                if attempt < max_attempts - 1 and ("timeout" in str(exc).lower() or "503" in str(exc)):
                     await asyncio.sleep(2.0)
+                    active_model = self.fallback_model
                     continue
                 raise _friendly_llm_error(active_model, exc) from exc

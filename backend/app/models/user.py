@@ -17,6 +17,13 @@ class User(Base):
     can_publish: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    # Account Lockout & Security
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Session Invalidation & Token Revocation
+    token_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
 
     articles = relationship(
         "Article",

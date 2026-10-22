@@ -2,6 +2,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from app.core.config import settings
+from app.core.network_security import is_safe_external_url
 
 
 class WebResearcher:
@@ -28,7 +29,14 @@ class WebResearcher:
                 data = search_response.json()
 
                 organic = data.get("organic", [])[:5]
-                urls = [item["link"] for item in organic if item.get("link")]
+                raw_urls = [item["link"] for item in organic if item.get("link")]
+                
+                # SSRF Protection: Filter out any internal/private IP targets
+                urls: list[str] = []
+                for u in raw_urls:
+                    is_safe, _ = is_safe_external_url(u)
+                    if is_safe:
+                        urls.append(u)
 
                 # snippets مستقیم از Serper — مهم‌ترین منبع facts
                 snippets: list[str] = []
@@ -36,17 +44,14 @@ class WebResearcher:
                     snippet = item.get("snippet", "").strip()
                     title = item.get("title", "").strip()
                     if snippet:
-                        # عنوان + snippet = یک fact کامل
                         snippets.append(f"{title}: {snippet}" if title else snippet)
 
-                # کلمات کلیدی مرتبط — فیلد درست "text" است
                 keywords: list[str] = [
                     item.get("query") or item.get("text", "")
                     for item in data.get("relatedSearches", [])
                     if item.get("query") or item.get("text")
                 ]
 
-                # answerBox اگه وجود داشت — اطلاعات مستقیم گوگل
                 answer_box = data.get("answerBox", {})
                 if answer_box:
                     answer = (
@@ -57,7 +62,6 @@ class WebResearcher:
                     if answer:
                         snippets.insert(0, f"[پاسخ مستقیم گوگل]: {answer}")
 
-                # knowledgeGraph اگه وجود داشت
                 kg = data.get("knowledgeGraph", {})
                 if kg.get("description"):
                     snippets.insert(0, f"[دانش‌نامه]: {kg['description']}")
@@ -71,7 +75,7 @@ class WebResearcher:
                         page_response = await client.get(
                             url,
                             follow_redirects=True,
-                            timeout=8.0,  # timeout کوتاه per-page
+                            timeout=8.0,
                             headers={
                                 "User-Agent": (
                                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -83,25 +87,20 @@ class WebResearcher:
                         page_response.raise_for_status()
                         soup = BeautifulSoup(page_response.text, "html.parser")
 
-                        # عناوین H2 و H3 برای outline
                         for tag in soup.find_all(["h2", "h3"]):
                             text = tag.get_text(strip=True)
                             if text and len(text) > 5:
                                 headings.append(text)
 
-                        # پاراگراف‌های متنی برای facts
                         paragraphs = soup.find_all("p")
                         for p in paragraphs[:8]:
                             text = p.get_text(strip=True)
-                            # فقط پاراگراف‌های اطلاعاتی واقعی
                             if len(text) > 60:
                                 page_snippets.append(text)
 
                     except Exception:
-                        # اگه scraping fail شد، snippet خود Serper کافیه
                         continue
 
-                # ترکیب: snippets Serper + محتوای صفحات
                 all_snippets = snippets + page_snippets
 
                 return {
@@ -119,5 +118,5 @@ class WebResearcher:
         except Exception as exc:
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Unexpected error in web research: {exc}", exc_info=True)
+            logger.error(f"Unexpected error during web research: {exc}")
             return empty

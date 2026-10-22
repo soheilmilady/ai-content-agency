@@ -176,7 +176,7 @@ export default function ArticleDetailPage({ params }: { params: { id: string } }
               <div className="space-y-2">
                 <Label>ویرایشگر HTML</Label>
                 <textarea
-                  className="w-full h-[500px] p-4 border rounded-md font-mono text-sm text-left"
+                  className="w-full h-[500px] p-4 border border-input rounded-md font-mono text-sm text-left bg-background text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   dir="ltr"
                   value={contentHtml}
                   onChange={(e) => setContentHtml(e.target.value)}
@@ -194,7 +194,7 @@ export default function ArticleDetailPage({ params }: { params: { id: string } }
             </CardHeader>
             <CardContent>
               <div 
-                className="prose prose-sm max-w-none border rounded-md p-4 bg-background max-h-[500px] overflow-y-auto"
+                className="prose dark:prose-invert prose-sm max-w-none border border-border rounded-md p-4 bg-background max-h-[500px] overflow-y-auto"
                 dangerouslySetInnerHTML={{
                   __html: typeof window !== "undefined" ? DOMPurify.sanitize(contentHtml) : contentHtml
                 }}

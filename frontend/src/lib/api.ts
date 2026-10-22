@@ -102,6 +102,16 @@ export async function login(
   return { access_token: data.access_token };
 }
 
+export async function logout(): Promise<void> {
+  try {
+    await api.post("/auth/logout");
+  } catch {
+    // Continue even if network error occurs
+  } finally {
+    Cookies.remove("auth_token");
+  }
+}
+
 export async function getMe(): Promise<User> {
   const { data } = await api.get<User>("/auth/me");
   return data;
@@ -112,8 +122,8 @@ export async function updateProfile(data: ProfileUpdateData): Promise<User> {
   return user;
 }
 
-export async function getUsers(): Promise<User[]> {
-  const { data } = await api.get<User[]>("/users");
+export async function getUsers(params?: { skip?: number; limit?: number }): Promise<User[]> {
+  const { data } = await api.get<User[]>("/users", { params });
   return data;
 }
 
@@ -152,8 +162,8 @@ export async function getArticle(id: number): Promise<Article> {
   return data;
 }
 
-export async function getArticles(): Promise<Article[]> {
-  const { data } = await api.get<Article[]>("/articles");
+export async function getArticles(params?: { skip?: number; limit?: number }): Promise<Article[]> {
+  const { data } = await api.get<Article[]>("/articles", { params });
   return data;
 }
 

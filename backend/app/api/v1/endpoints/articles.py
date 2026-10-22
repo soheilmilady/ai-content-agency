@@ -8,11 +8,12 @@ from typing import Annotated
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.api.v1.deps import get_current_user, get_db
 from app.core.config import settings
 from app.core.limiter import limiter, get_dynamic_daily_limit
+from app.core.network_security import is_safe_external_url
 from app.models.article import Article
 from app.models.user import User
 from app.schemas.article import (
@@ -28,21 +29,13 @@ from app.schemas.article import (
 from app.services.llm_gateway import LLMGateway
 from app.services.seo_generator import (
     SEOGenerator,
-    ArticleState,
     fast_seo_scorer,
     sanitize_html
 )
-from app.services.web_researcher import WebResearcher
+from app.services.article_orchestrator import ArticlePipeline, get_default_llm_model
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-_SECTION_DELAY: float = float(getattr(settings, "SECTION_DELAY_SECONDS", "3.0"))
-
-
-# ─────────────────────────────────────────────
-# توابع کمکی دسترسی و امنیتی
-# ─────────────────────────────────────────────
 
 def _can_access(user: User, article: Article, read_only: bool = False) -> bool:
     if user.role == "admin":
@@ -58,221 +51,16 @@ def _can_access(user: User, article: Article, read_only: bool = False) -> bool:
 def _can_publish(user: User) -> bool:
     return user.role == "admin" or user.can_publish
 
-def _has_api_key() -> bool:
-    return bool(
-        getattr(settings, "GEMINI_API_KEY", None)
-        or getattr(settings, "GROQ_API_KEY", None)
-        or getattr(settings, "OPENROUTER_API_KEY", None)
+
+
+
+
+def _article_query_with_relations(db: Session):
+    return db.query(Article).options(
+        joinedload(Article.author),
+        joinedload(Article.last_modified_by),
+        selectinload(Article.assigned_editors),
     )
-
-def _default_model() -> str:
-    return getattr(settings, "DEFAULT_LLM_MODEL", "gemini-3.7-flash")
-
-def _sse(data: dict) -> str:
-    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-def _assemble_html(state: ArticleState) -> str:
-    parts = [f"<h1>{state.outline.get('h1', state.keyword)}</h1>"]
-    for section, html in zip(state.outline.get("sections", []), state.sections_html):
-        h2 = section.get("h2", "")
-        if h2:
-            parts.append(f"<h2>{h2}</h2>")
-        if html:
-            parts.append(html)
-    return "".join(parts)
-
-
-# ─────────────────────────────────────────────
-# کلاس ارکستراتور (مدیریت جریان تولید محتوا)
-# ─────────────────────────────────────────────
-
-class ArticlePipeline:
-    """ارکستراتور مرکزی که شیء ArticleState را در طول مراحل پردازش هدایت می‌کند."""
-    
-    def __init__(self, db: Session, current_user: User, llm_model: str | None):
-        self.db = db
-        self.current_user = current_user
-        self.model = llm_model or _default_model()
-        self.llm = LLMGateway(model=self.model)
-        self.generator = SEOGenerator(self.llm)
-        self.researcher = WebResearcher()
-
-    def _extract_facts(self, research_data: dict) -> list[str]:
-        snippets = research_data.get("snippets", [])
-        if isinstance(snippets, list) and snippets:
-            return [s for s in snippets if isinstance(s, str) and len(s) > 20]
-        content = research_data.get("content", "")
-        if isinstance(content, str) and content:
-            sentences = [s.strip() for s in content.split(".") if len(s.strip()) > 20]
-            return sentences[:15]
-        return []
-
-    def _save_article(self, state: ArticleState, full_content: str, score: int) -> Article:
-        article = Article(
-            title=state.outline.get("h1", state.keyword),
-            content_html=full_content,
-            meta_description=state.outline.get("meta_description", "")[:160],
-            focus_keyword=state.keyword,
-            seo_score=score,
-            status="pending_approval",
-            author_id=self.current_user.id,
-        )
-        self.db.add(article)
-        self.db.commit()
-        self.db.refresh(article)
-        return article
-
-    async def execute_stream(self, topic: str, keyword: str, h2_keywords: list[str] | None = None) -> AsyncGenerator[str, None]:
-        try:
-            if not _has_api_key():
-                yield _sse({"step": "error", "message": "کلید API تنظیم نشده است."})
-                return
-
-            # ۱. مقداردهی اولیه State
-            state = ArticleState(topic=topic, keyword=keyword)
-
-            # ۲. فاز تحقیق
-            yield _sse({"step": "researching", "message": "در حال تحقیق زنده..."})
-            state.research_data = await self.researcher.research(topic)
-            raw_facts = self._extract_facts(state.research_data)
-            
-            # پاکسازی و اعتبارسنجی فکت‌ها (فاز ۳)
-            yield _sse({"step": "validating_facts", "message": "در حال پالایش و اعتبارسنجی اطلاعات..."})
-            state.all_facts = await self.generator.validate_and_deduplicate_facts(raw_facts)
-
-            # ۳. فاز طراحی ساختار (Outline)
-            yield _sse({"step": "outlining", "message": "در حال طراحی ساختار..."})
-            state.outline = await self.generator.generate_outline(topic, keyword, state.research_data, h2_keywords)
-
-            sections = state.outline.get("sections", [])
-            lsi_keywords = state.outline.get("lsi_keywords", [])
-            domain_glossary = state.outline.get("domain_glossary", {})
-            total = len(sections)
-
-            # ۴. فاز نگاشت فکت‌ها
-            yield _sse({"step": "routing_facts", "message": "تخصیص هوشمند اطلاعات..."})
-            state.facts_map = await self.generator.distribute_facts_semantic(sections, state.all_facts)
-
-            # ارسال H1 به فرانت‌اند
-            yield _sse({"token": f"<h1>{state.outline.get('h1', keyword)}</h1>\n\n"})
-
-            # ۵. فاز نگارش بخش به بخش
-            for idx, section in enumerate(sections, start=1):
-                h2 = section.get("h2", f"بخش {idx}")
-                yield _sse({
-                    "step": "drafting",
-                    "message": f"نگارش بخش {idx} از {total}: «{h2}»",
-                    "progress": round((idx - 1) / total * 100),
-                })
-
-                if idx > 1 and _SECTION_DELAY > 0:
-                    await asyncio.sleep(_SECTION_DELAY)
-
-                yield _sse({"token": f"<h2>{h2}</h2>\n"})
-
-                core_thesis = section.get("core_thesis") or section.get("content_angle") or f"توضیح {h2}"
-                section_facts = state.facts_map.get(h2, [])
-                
-                # فراخوانیِ حافظه‌ی مفهومی
-                narrative_memory = state.get_narrative_memory()
-
-                accumulated_section_html = ""
-                stream_generator = self.generator.draft_section_stream(
-                    h2_title=h2,
-                    core_thesis=core_thesis,
-                    h3_list=section.get("h3_list", []),
-                    keyword=state.keyword,
-                    lsi_keywords=lsi_keywords,
-                    domain_glossary=domain_glossary,
-                    section_facts=section_facts,
-                    narrative_memory=narrative_memory,
-                )
-
-                async for chunk in stream_generator:
-                    accumulated_section_html += chunk
-                    yield _sse({"token": chunk})
-
-                yield _sse({"token": "\n\n"})
-
-                clean_html = sanitize_html(accumulated_section_html)
-                state.sections_html.append(clean_html)
-                
-                # ثبت تز مرکزیِ این بخش در حافظه برای جلوگیری از تکرار در بخش‌های بعد
-                state.completed_theses.append(core_thesis)
-
-                yield _sse({
-                    "step": "section_ready",
-                    "index": idx,
-                    "total": total,
-                    "h2": h2,
-                    "html": clean_html,
-                    "facts_used": len(section_facts),
-                })
-
-            # ۶. فاز ارزیابی آفلاین سئو
-            yield _sse({"step": "auditing", "message": "محاسبه امتیاز سئو..."})
-            full_content = _assemble_html(state)
-            score = fast_seo_scorer(full_content, keyword)
-
-            # ۷. ذخیره‌سازی نهایی
-            article = self._save_article(state, full_content, score)
-
-            yield _sse({
-                "step": "done",
-                "article_id": article.id,
-                "seo_score": score,
-                "title": article.title,
-                "meta_description": state.outline.get("meta_description", ""),
-                "facts_total": len(state.all_facts),
-            })
-
-        except asyncio.TimeoutError:
-            logger.error("Timeout during streaming", exc_info=True)
-            yield _sse({"step": "error", "message": "زمان پاسخ مدل تمام شد. لطفاً دوباره تلاش کنید."})
-        except Exception as exc:
-            logger.error(f"Generation stream error: {exc}", exc_info=True)
-            user_msg = str(exc) if isinstance(exc, ValueError) else "یک خطای داخلی در سرور رخ داد. لطفاً دوباره تلاش کنید."
-            yield _sse({"step": "error", "message": user_msg})
-
-    async def execute_no_stream(self, topic: str, keyword: str, h2_keywords: list[str] | None = None) -> Article:
-        if not _has_api_key():
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="API key تنظیم نشده.")
-        
-        state = ArticleState(topic=topic, keyword=keyword)
-        state.research_data = await self.researcher.research(topic)
-        raw_facts = self._extract_facts(state.research_data)
-        state.all_facts = await self.generator.validate_and_deduplicate_facts(raw_facts)
-        
-        state.outline = await self.generator.generate_outline(topic, keyword, state.research_data, h2_keywords)
-        
-        sections = state.outline.get("sections", [])
-        lsi_keywords = state.outline.get("lsi_keywords", [])
-        domain_glossary = state.outline.get("domain_glossary", {})
-        state.facts_map = await self.generator.distribute_facts_semantic(sections, state.all_facts)
-
-        for idx, section in enumerate(sections, start=1):
-            if idx > 1 and _SECTION_DELAY > 0:
-                await asyncio.sleep(_SECTION_DELAY)
-
-            h2 = section.get("h2", f"بخش {idx}")
-            core_thesis = section.get("core_thesis") or section.get("content_angle") or f"توضیح {h2}"
-            
-            html = await self.generator.draft_section(
-                h2_title=h2,
-                core_thesis=core_thesis,
-                h3_list=section.get("h3_list", []),
-                keyword=state.keyword,
-                lsi_keywords=lsi_keywords,
-                domain_glossary=domain_glossary,
-                section_facts=state.facts_map.get(h2, []),
-                narrative_memory=state.get_narrative_memory(),
-            )
-            state.sections_html.append(html)
-            state.completed_theses.append(core_thesis)
-
-        full_content = _assemble_html(state)
-        score = fast_seo_scorer(full_content, keyword)
-        return self._save_article(state, full_content, score)
 
 
 # ─────────────────────────────────────────────
@@ -297,23 +85,6 @@ async def generate_stream_post(
         },
     )
 
-@router.get("/articles/generate-stream")
-@limiter.limit(get_dynamic_daily_limit)
-async def generate_stream_get(
-    request: Request,
-    db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
-    topic: str = Query(...),
-    keyword: str = Query(...),
-    llm_model: str | None = Query(None),
-):
-    pipeline = ArticlePipeline(db, current_user, llm_model)
-    return StreamingResponse(
-        pipeline.execute_stream(topic, keyword),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
 @router.post("/articles/generate", response_model=ArticleResponse)
 @limiter.limit(get_dynamic_daily_limit)
 async def generate_no_stream(
@@ -332,8 +103,13 @@ async def generate_no_stream(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="خطای داخلی در تولید محتوا.")
 
 @router.get("/articles", response_model=list[ArticleListResponse])
-def list_articles(db: Annotated[Session, Depends(get_db)], current_user: Annotated[User, Depends(get_current_user)]):
-    query = db.query(Article)
+def list_articles(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    skip: int = Query(0, ge=0, description="تعداد رکوردهایی که نادیده گرفته می‌شوند"),
+    limit: int = Query(50, ge=1, le=100, description="حداکثر تعداد رکوردهای خروجی"),
+):
+    query = _article_query_with_relations(db)
     if current_user.role not in ("admin", "viewer"):
         if current_user.role == "editor":
             query = query.filter(
@@ -342,11 +118,11 @@ def list_articles(db: Annotated[Session, Depends(get_db)], current_user: Annotat
             )
         else:
             query = query.filter(Article.author_id == current_user.id)
-    return query.order_by(Article.created_at.desc()).all()
+    return query.order_by(Article.created_at.desc()).offset(skip).limit(limit).all()
 
 @router.get("/articles/{article_id}", response_model=ArticleResponse)
 def get_article(article_id: int, db: Annotated[Session, Depends(get_db)], current_user: Annotated[User, Depends(get_current_user)]):
-    article = db.query(Article).filter(Article.id == article_id).first()
+    article = _article_query_with_relations(db).filter(Article.id == article_id).first()
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مقاله یافت نشد.")
     if not _can_access(current_user, article, read_only=True):
@@ -355,7 +131,7 @@ def get_article(article_id: int, db: Annotated[Session, Depends(get_db)], curren
 
 @router.patch("/articles/{article_id}", response_model=ArticleResponse)
 def update_article(article_id: int, body: ArticleUpdate, db: Annotated[Session, Depends(get_db)], current_user: Annotated[User, Depends(get_current_user)]):
-    article = db.query(Article).filter(Article.id == article_id).first()
+    article = _article_query_with_relations(db).filter(Article.id == article_id).first()
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مقاله یافت نشد.")
     if not _can_access(current_user, article):
@@ -397,7 +173,7 @@ def assign_editors(
     if current_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can assign editors.")
     
-    article = db.query(Article).filter(Article.id == article_id).first()
+    article = _article_query_with_relations(db).filter(Article.id == article_id).first()
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found.")
         
@@ -422,7 +198,7 @@ async def improve_article_preview(
     if not _can_access(current_user, article):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="دسترسی ندارید.")
 
-    llm_model = body.llm_model or _default_model()
+    llm_model = body.llm_model or get_default_llm_model()
     llm = LLMGateway(model=llm_model)
     generator = SEOGenerator(llm)
     
@@ -451,7 +227,7 @@ def approve_article(article_id: int, db: Annotated[Session, Depends(get_db)], cu
     if current_user.role not in ("admin", "editor"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="فقط ادمین و ویراستار می‌توانند مقاله را تایید کنند.")
         
-    article = db.query(Article).filter(Article.id == article_id).first()
+    article = _article_query_with_relations(db).filter(Article.id == article_id).first()
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مقاله یافت نشد.")
         
@@ -465,7 +241,7 @@ async def publish_article(article_id: int, body: PublishRequest, db: Annotated[S
     if not _can_publish(current_user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="فقط admin و editor می‌توانند مقاله منتشر کنند.")
 
-    article = db.query(Article).filter(Article.id == article_id).first()
+    article = _article_query_with_relations(db).filter(Article.id == article_id).first()
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="مقاله یافت نشد.")
     if not _can_access(current_user, article):
@@ -474,12 +250,33 @@ async def publish_article(article_id: int, body: PublishRequest, db: Annotated[S
     if article.status not in ("approved", "published"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="فقط مقالاتی که تأیید شده‌اند (approved) قابل انتشار هستند.")
 
-    wp_url = body.wp_url or getattr(settings, "WP_URL", "")
-    wp_username = body.wp_username or getattr(settings, "WP_USERNAME", "")
-    wp_password = body.wp_app_password or getattr(settings, "WP_APP_PASSWORD", "")
+    system_wp_url = getattr(settings, "WP_URL", "")
+    target_wp_url = body.wp_url or system_wp_url
 
-    if not all([wp_url, wp_username, wp_password]):
+    if not target_wp_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="آدرس سرور وردپرس تنظیم نشده است.")
+
+    # SSRF Protection: validate destination URL
+    is_safe, error_msg = is_safe_external_url(target_wp_url)
+    if not is_safe:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"آدرس وردپرس غیرمجاز است: {error_msg}")
+
+    # Credential Isolation: Never send system default credentials to custom external targets
+    if target_wp_url != system_wp_url:
+        if current_user.role != "admin":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="فقط مدیر کل می‌تواند به وردپرس خارجی مقاله ارسال کند.")
+        if not body.wp_username or not body.wp_app_password:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="برای سرور وردپرس سفارشی، نام کاربری و رمز عبور اختصاصی الزامی است.")
+        wp_username = body.wp_username
+        wp_password = body.wp_app_password
+    else:
+        wp_username = body.wp_username or getattr(settings, "WP_USERNAME", "")
+        wp_password = body.wp_app_password or getattr(settings, "WP_APP_PASSWORD", "")
+
+    if not wp_username or not wp_password:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="اطلاعات وردپرس ناقص است.")
+
+    wp_url = target_wp_url
 
     credentials = base64.b64encode(f"{wp_username}:{wp_password}".encode()).decode()
 

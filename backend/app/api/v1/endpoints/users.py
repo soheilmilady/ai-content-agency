@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_db, require_admin
@@ -15,8 +15,17 @@ router = APIRouter()
 def list_users(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[User, Depends(require_admin)],
+    skip: int = Query(0, ge=0, description="تعداد رکوردهایی که نادیده گرفته می‌شوند"),
+    limit: int = Query(50, ge=1, le=100, description="حداکثر تعداد رکوردهای خروجی"),
 ):
-    return db.query(User).filter(User.is_active == True).all()
+    return (
+        db.query(User)
+        .filter(User.is_active == True)
+        .order_by(User.id.asc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
 
 
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -90,6 +99,10 @@ def update_user(
         user.hashed_password = hash_password(update_data["password"])
         del update_data["password"]
 
+    # Revoke sessions if security-critical fields are updated
+    if any(k in update_data for k in ("password", "role", "is_active")):
+        user.token_version = (getattr(user, "token_version", 1) or 1) + 1
+
     for field, value in update_data.items():
         setattr(user, field, value)
 
@@ -118,6 +131,7 @@ def delete_user(
         )
 
     user.is_active = False
+    user.token_version = (getattr(user, "token_version", 1) or 1) + 1
     user.email = f"deleted_{user.id}_{user.email}"
     user.username = f"deleted_{user.id}_{user.username}"
     db.commit()

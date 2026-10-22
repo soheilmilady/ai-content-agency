@@ -47,7 +47,7 @@ export default function LoginPage() {
   return (
     <div
       dir="rtl"
-      className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-100 via-slate-200 to-indigo-100 p-4 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950"
+      className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-100 via-slate-200 to-indigo-100 p-4 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950 overflow-x-hidden"
     >
       <div className="absolute left-4 top-4">
         <ThemeToggle />
@@ -58,7 +58,7 @@ export default function LoginPage() {
         <div className="absolute -bottom-24 -left-24 h-96 w-96 rounded-full bg-violet-500/10 blur-3xl" />
       </div>
 
-      <Card className="glass-panel relative w-full max-w-md shadow-2xl">
+      <Card className="glass-panel relative w-full max-w-sm sm:max-w-md shadow-2xl">
         <CardHeader className="space-y-4 text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 shadow-lg shadow-indigo-600/30">
             <Sparkles className="h-7 w-7 text-white" />
