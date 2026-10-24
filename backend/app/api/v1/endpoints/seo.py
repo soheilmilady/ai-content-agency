@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from app.api.v1.deps import get_current_user
@@ -12,6 +12,21 @@ from app.services.llm_gateway import LLMGateway
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _normalize_cluster_data(parsed: Any) -> dict[str, Any]:
+    """تبدیل منعطف خروجی‌های ساختاریافته هوش مصنوعی به قالب معتبر ClusterResponse."""
+    if isinstance(parsed, list):
+        return {"clusters": parsed}
+    if isinstance(parsed, dict):
+        if "clusters" in parsed and isinstance(parsed["clusters"], list):
+            return parsed
+        for key in ("topics", "topic_clusters", "items", "data", "categories", "results"):
+            if key in parsed and isinstance(parsed[key], list):
+                return {"clusters": parsed[key]}
+        if "cluster_name" in parsed or "pillar_keyword" in parsed:
+            return {"clusters": [parsed]}
+    return {"clusters": []}
 
 
 @router.post("/cluster", response_model=ClusterResponse)
@@ -60,10 +75,13 @@ async def cluster_keywords(
     try:
         raw_json = await llm.generate(messages, json_mode=True)
         parsed = parse_json_response(raw_json)
-        return ClusterResponse(**parsed)
+        normalized = _normalize_cluster_data(parsed)
+        return ClusterResponse(**normalized)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        logger.error(f"Validation/LLM error clustering keywords: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to cluster keywords: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="خطا در پردازش و خوشه‌بندی کلمات کلیدی توسط هوش مصنوعی. لطفاً مجدداً تلاش کنید."
-        )
+        raise HTTPException(status_code=500, detail=str(e))

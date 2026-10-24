@@ -100,7 +100,7 @@ async def generate_no_stream(
         raise
     except Exception as exc:
         logger.error(f"Generation error: {exc}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="خطای داخلی در تولید محتوا.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
 @router.get("/articles", response_model=list[ArticleListResponse])
 def list_articles(

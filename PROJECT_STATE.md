@@ -74,6 +74,12 @@ An enterprise-grade autonomous AI Content Agency platform designed to conduct de
 
 ## 5. Milestone Changelog
 
+- **2026-10-24 (SEO Topic Clustering & Model Alias Resolution Fix)**:
+  - **Empirical Diagnostics**: Intercepted real-time SSE failure on Render backend (`https://ai-content-agency.onrender.com`). Discovered Render had `DEFAULT_LLM_MODEL=groq/llama-3.3-70b-versatile` in its runtime environment variables. Because `MODEL_ALIASES` lacked `groq/` prefix matching, it attempted to call Google Gemini with `groq/llama-3.3-70b-versatile`, resulting in HTTP 404 from Google API.
+  - **Provider Prefix Stripping & Fallback**: Updated `LLMGateway` to automatically strip provider prefixes (`groq/`, `openrouter/`), expand alias dictionary, and automatically map any unknown non-Gemini model name to `gemini-3.6-flash`.
+  - **Defensive Cluster Parsing & Resilient Schema**: Added `_normalize_cluster_data` in `endpoints/seo.py` gracefully accommodating raw JSON arrays (`[...]`) and alternate root keys (`topics`, `data`). Added defaults to `ClusterItem` fields (`search_intent="Informational"`, `cluster_name="خوشه موضوعی"`).
+  - **Transparent Error Propagation**: Replaced swallowed generic 500 exceptions in `seo.py` and `articles.py` with explicit exception details (`detail=str(e)`), ensuring zero mystery errors across API responses.
+
 - **2026-10-24 (End-to-End Keyword Research & Content Brief Pipeline)**:
   - **AnswerThePublic Smart Intent Tabs**: Implemented client-side regex categorization in `frontend/src/app/dashboard/keyword-research/page.tsx` segmenting scraped Google Autocomplete keywords into 4 real-time views: ❓ Questions & Guides, ⚖️ Comparisons, 💳 Commercial & Pricing, and 📋 All keywords with live count badges.
   - **Full Content Brief Modal**: Created rich strategic brief dialog in `frontend/src/components/seo/TopicClusterCard.tsx` presenting Pillar keyword, Search Intent, Target Persona, Suggested H1, and ordered H2 structure before drafting.

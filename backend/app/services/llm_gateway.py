@@ -10,14 +10,17 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# نگاشت مدل‌های قدیمی به جدیدترین مدل‌های پایدار گوگل جمینای
+# نگاشت مدل‌های قدیمی و متفرقه به جدیدترین مدل‌های پایدار گوگل جمینای
 MODEL_ALIASES: dict[str, str] = {
-    "llama-3.3-70b-versatile": "gemini-3.5-flash",
+    "llama-3.3-70b-versatile": "gemini-3.6-flash",
+    "groq/llama-3.3-70b-versatile": "gemini-3.6-flash",
     "llama-3.1-8b-instant": "gemini-3.5-flash-lite",
+    "groq/llama-3.1-8b-instant": "gemini-3.5-flash-lite",
     "meta-llama/llama-4-scout-17b-16e-instruct": "gemini-3.1-flash-lite",
-    "llama-3.1-70b-versatile": "gemini-3.5-flash",
-    "gemini-2.5-flash": "gemini-3.5-flash",
-    "gemini-2.5-pro": "gemini-3.5-flash",
+    "llama-3.1-70b-versatile": "gemini-3.6-flash",
+    "groq/llama-3.1-70b-versatile": "gemini-3.6-flash",
+    "gemini-2.5-flash": "gemini-3.6-flash",
+    "gemini-2.5-pro": "gemini-3.6-flash",
 }
 
 API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -120,9 +123,22 @@ def _build_gemini_payload(
 
 class LLMGateway:
     def __init__(self, model: str | None = None):
-        raw_model = model or getattr(settings, "DEFAULT_LLM_MODEL", "gemini-3.6-flash")
-        self.model = MODEL_ALIASES.get(raw_model, raw_model)
         self.fallback_model = "gemini-3.6-flash"
+        raw_model = (model or getattr(settings, "DEFAULT_LLM_MODEL", self.fallback_model)).strip()
+        
+        # پاک‌سازی پیشوندهایی مانند groq/ یا openrouter/
+        clean_model = raw_model.split("/")[-1] if "/" in raw_model else raw_model
+
+        mapped = MODEL_ALIASES.get(raw_model) or MODEL_ALIASES.get(clean_model)
+        if mapped:
+            self.model = mapped
+        elif not raw_model.startswith("gemini-"):
+            logger.warning(
+                f"مدل ناشناخته «{raw_model}» با مدل پایدار «{self.fallback_model}» جایگزین شد."
+            )
+            self.model = self.fallback_model
+        else:
+            self.model = raw_model
 
     def _get_api_key(self) -> str:
         api_key = getattr(settings, "GEMINI_API_KEY", "").strip("\"' \t\r\n")
