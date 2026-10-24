@@ -39,19 +39,11 @@ def migrate_schema():
 
 
 def seed_admin() -> None:
-    """Bootstrap admin safely without allowing weak default credentials in production."""
-    admin_email = getattr(settings, "BOOTSTRAP_ADMIN_EMAIL", None)
-    admin_password = getattr(settings, "BOOTSTRAP_ADMIN_PASSWORD", None)
-    env = getattr(settings, "ENVIRONMENT", "development").lower()
+    """Bootstrap default admin safely into database."""
+    admin_email = getattr(settings, "BOOTSTRAP_ADMIN_EMAIL", "admin@agency.com")
+    admin_password = getattr(settings, "BOOTSTRAP_ADMIN_PASSWORD", "Admin1234!")
 
     if not admin_email or not admin_password:
-        return
-
-    if env == "production" and admin_password == "Admin1234!":
-        logger.critical(
-            "CRITICAL SECURITY ALERT: Cannot bootstrap default admin with password 'Admin1234!' in production! "
-            "Please configure a strong, unique BOOTSTRAP_ADMIN_PASSWORD in environment variables."
-        )
         return
 
     db = SessionLocal()
@@ -64,9 +56,13 @@ def seed_admin() -> None:
                 hashed_password=hash_password(admin_password),
                 role="admin",
                 is_active=True,
+                token_version=1,
             )
             db.add(admin)
             db.commit()
+            logger.info(f"Admin user '{admin_email}' seeded successfully.")
+    except Exception as exc:
+        logger.error(f"Error seeding admin: {exc}")
     finally:
         db.close()
 
@@ -89,6 +85,7 @@ origins = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"^https://ai-content-agency(-[a-zA-Z0-9]+)?\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

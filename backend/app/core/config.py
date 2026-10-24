@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     WP_APP_PASSWORD: str = ""
     DEFAULT_LLM_MODEL: str = "gemini-3.7-flash"
     SECTION_DELAY_SECONDS: float = 3.0
-    ALLOWED_ORIGINS: str = "http://localhost:3000,https://ai-content-agency.vercel.app"
+    ALLOWED_ORIGINS: str = "http://localhost:3000,https://ai-content-agency.vercel.app,https://ai-content-agency-vjbd.vercel.app"
 
 
 settings = Settings()

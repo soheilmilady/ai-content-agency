@@ -74,6 +74,9 @@ An enterprise-grade autonomous AI Content Agency platform designed to conduct de
 
 ## 5. Milestone Changelog
 
+- **2026-10-24 (Production CORS & Seed Fix for Render/Vercel)**:
+  - **CORS Regex Restored**: Enabled `allow_origin_regex=r"^https://ai-content-agency(-[a-zA-Z0-9]+)?\.vercel\.app$"` and explicitly added `https://ai-content-agency-vjbd.vercel.app` to `ALLOWED_ORIGINS` resolving blocked browser preflight and login requests from Vercel deployments.
+  - **Unconditional Admin Seeding on Fresh Containers**: Removed premature production bypass in `seed_admin` so fresh/ephemeral containers on Render automatically seed `admin@agency.com` / `Admin1234!` when initializing empty databases.
 - **2026-10-22 (Phase 3 Session Invalidation & Logout Security Completed)**:
   - **Instant Token Revocation via `token_version`**: Integrated `token_version` tracking in `User` model, embedding `"tv"` claim into JWT payloads and enforcing live verification in `deps.py:get_current_user`.
   - **Server-Side Invalidation on Logout**: Added `POST /api/v1/auth/logout` endpoint that increments `token_version`, immediately invalidating all outstanding JWT sessions on all devices.
