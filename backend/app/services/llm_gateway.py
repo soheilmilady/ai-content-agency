@@ -24,11 +24,19 @@ API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 
 def _friendly_llm_error(model: str, exc: Exception) -> ValueError:
-    message = str(exc).lower()
+    exc_type_name = type(exc).__name__.lower()
+    exc_str = str(exc)
+    message = f"{exc_type_name} {exc_str}".lower()
 
     if isinstance(exc, json.JSONDecodeError):
         return ValueError(
             "پاسخ API گوگل خالی یا نامعتبر بود. لطفاً مجدداً تلاش کنید."
+        )
+
+    if isinstance(exc, httpx.TimeoutException) or "timeout" in exc_type_name or "timeout" in message:
+        return ValueError(
+            f"زمان پاسخ‌دهی سرور گوگل برای مدل «{model}» به پایان رسید (Timeout). "
+            "لطفاً از مدل‌های پایدارتر (مانند Gemini 3.6 Flash یا Gemini 3.5 Flash) استفاده کنید."
         )
 
     if "api_key_invalid" in message or "invalid api key" in message:
@@ -40,7 +48,7 @@ def _friendly_llm_error(model: str, exc: Exception) -> ValueError:
     if "429" in message or "resource_exhausted" in message or "rate limit" in message or "quota" in message:
         return ValueError(
             f"سقف درخواست روزانه (Quota) در پلن رایگان Google AI Studio برای مدل «{model}» تکمیل شده است. "
-            "لطفاً از مدل‌های پایدار دیگر (مانند Gemini 3.7 Flash) استفاده فرمایید یا فردا تلاش کنید."
+            "لطفاً از مدل‌های پایدار دیگر (مانند Gemini 3.6 Flash یا Gemini 3.5 Flash) استفاده فرمایید یا فردا تلاش کنید."
         )
 
     if "permission_denied" in message or "403" in message:
@@ -59,7 +67,8 @@ def _friendly_llm_error(model: str, exc: Exception) -> ValueError:
             "سرویس هوش مصنوعی گوگل موقتاً با بار کاری بالا مواجه است. چند ثانیه دیگر تلاش کنید."
         )
 
-    return ValueError(f"خطای Google Gemini ({model}): {exc}")
+    err_details = exc_str.strip() or exc_type_name
+    return ValueError(f"خطای Google Gemini ({model}): {err_details}")
 
 
 def _build_gemini_payload(
@@ -111,9 +120,9 @@ def _build_gemini_payload(
 
 class LLMGateway:
     def __init__(self, model: str | None = None):
-        raw_model = model or getattr(settings, "DEFAULT_LLM_MODEL", "gemini-3.7-flash")
+        raw_model = model or getattr(settings, "DEFAULT_LLM_MODEL", "gemini-3.6-flash")
         self.model = MODEL_ALIASES.get(raw_model, raw_model)
-        self.fallback_model = "gemini-3.5-flash"
+        self.fallback_model = "gemini-3.6-flash"
 
     def _get_api_key(self) -> str:
         api_key = getattr(settings, "GEMINI_API_KEY", "").strip("\"' \t\r\n")
@@ -149,7 +158,7 @@ class LLMGateway:
                 }
                 payload = _build_gemini_payload(messages, json_mode=json_mode)
 
-                async with httpx.AsyncClient(timeout=45.0) as client:
+                async with httpx.AsyncClient(timeout=25.0 if attempt == 0 else 40.0) as client:
                     response = await client.post(url, headers=headers, json=payload)
 
                 if response.status_code == 200:
@@ -177,7 +186,8 @@ class LLMGateway:
                 raise _friendly_llm_error(active_model, Exception(f"HTTP {response.status_code}: {err_text}"))
 
             except Exception as exc:
-                if attempt < max_attempts and ("timeout" in str(exc).lower() or "503" in str(exc)):
+                is_timeout = isinstance(exc, httpx.TimeoutException) or "timeout" in type(exc).__name__.lower() or "timeout" in str(exc).lower()
+                if attempt < max_attempts and (is_timeout or "503" in str(exc)):
                     await asyncio.sleep(2.0 * (attempt + 1))
                     active_model = self.fallback_model
                     continue
@@ -202,7 +212,7 @@ class LLMGateway:
             payload = _build_gemini_payload(messages, json_mode=json_mode)
 
             try:
-                async with httpx.AsyncClient(timeout=60.0) as client:
+                async with httpx.AsyncClient(timeout=30.0 if attempt == 0 else 60.0) as client:
                     async with client.stream("POST", url, headers=headers, json=payload) as response:
                         if response.status_code != 200:
                             err_body = await response.aread()
@@ -234,7 +244,8 @@ class LLMGateway:
                 return
 
             except Exception as exc:
-                if attempt < max_attempts - 1 and ("timeout" in str(exc).lower() or "503" in str(exc)):
+                is_timeout = isinstance(exc, httpx.TimeoutException) or "timeout" in type(exc).__name__.lower() or "timeout" in str(exc).lower()
+                if attempt < max_attempts - 1 and (is_timeout or "503" in str(exc)):
                     await asyncio.sleep(2.0)
                     active_model = self.fallback_model
                     continue

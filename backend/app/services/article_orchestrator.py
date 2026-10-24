@@ -34,7 +34,7 @@ def has_llm_api_key() -> bool:
 
 def get_default_llm_model() -> str:
     """دریافت مدل پیش‌فرض پایدار سیستم."""
-    return getattr(settings, "DEFAULT_LLM_MODEL", "gemini-3.7-flash")
+    return getattr(settings, "DEFAULT_LLM_MODEL", "gemini-3.6-flash")
 
 
 def _sse(data: dict) -> str:

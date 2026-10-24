@@ -31,19 +31,9 @@ const API_URL =
 
 export const AI_MODELS = [
   {
-    value: "gemini-3.8-flash",
-    label: "Flagship — Gemini 3.8 Flash",
-    description: "جدیدترین و پیشرفته‌ترین مدل هوش مصنوعی گوگل",
-  },
-  {
-    value: "gemini-3.7-flash",
-    label: "Advanced — Gemini 3.7 Flash",
-    description: "مدل فوق‌العاده هوشمند با استدلال تحلیلی بالا",
-  },
-  {
     value: "gemini-3.6-flash",
-    label: "Balanced Pro — Gemini 3.6 Flash",
-    description: "کیفیت عالی، درک عمیق مفهومی و سرعت بالا",
+    label: "Recommended — Gemini 3.6 Flash (سریع و پایدار)",
+    description: "بالاترین سرعت، کیفیت عالی و درک عمیق سئو",
   },
   {
     value: "gemini-3.5-flash",
@@ -54,6 +44,16 @@ export const AI_MODELS = [
     value: "gemini-3.5-flash-lite",
     label: "Fast & Efficient — Gemini 3.5 Flash Lite",
     description: "سرعت فوق‌العاده بالا، مناسب برای بلاگ روزانه",
+  },
+  {
+    value: "gemini-3.7-flash",
+    label: "Advanced — Gemini 3.7 Flash",
+    description: "مدل فوق‌العاده هوشمند با استدلال تحلیلی بالا",
+  },
+  {
+    value: "gemini-3.8-flash",
+    label: "Flagship — Gemini 3.8 Flash",
+    description: "جدیدترین و پیشرفته‌ترین مدل هوش مصنوعی گوگل",
   },
   {
     value: "gemini-3.1-flash-lite",

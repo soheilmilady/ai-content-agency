@@ -74,9 +74,15 @@ An enterprise-grade autonomous AI Content Agency platform designed to conduct de
 
 ## 5. Milestone Changelog
 
+- **2026-10-24 (Sidebar Active State Navigation Fix)**:
+  - Fixed duplicate active item highlighting in `frontend/src/app/dashboard/layout.tsx`. Navigating to `/dashboard/articles/new` ("تولید هوشمند") previously matched the prefix check `pathname.startsWith('/dashboard/articles/')` on the "لیست مقالات" item. Isolated `/dashboard/articles/new` from `/dashboard/articles` active matching.
 - **2026-10-24 (Production CORS & Seed Fix for Render/Vercel)**:
   - **CORS Regex Restored**: Enabled `allow_origin_regex=r"^https://ai-content-agency(-[a-zA-Z0-9]+)?\.vercel\.app$"` and explicitly added `https://ai-content-agency-vjbd.vercel.app` to `ALLOWED_ORIGINS` resolving blocked browser preflight and login requests from Vercel deployments.
   - **Unconditional Admin Seeding on Fresh Containers**: Removed premature production bypass in `seed_admin` so fresh/ephemeral containers on Render automatically seed `admin@agency.com` / `Admin1234!` when initializing empty databases.
+- **2026-10-24 (LLM Gateway Timeout & Fallback Fix)**:
+  - **Empirical Diagnostics**: Benchmarked all Google AI Studio models live. Identified that `gemini-3.7-flash` and `gemini-3.8-flash` intermittently hang/timeout (>45s) on Google's API, whereas `gemini-3.6-flash`, `gemini-3.5-flash`, and `gemini-3.5-flash-lite` respond in ~1.5s.
+  - **Silent Error Root Cause**: When `httpx.ReadTimeout` occurs, `str(exc)` is `""` (empty string). In `llm_gateway.py`, string-based timeout matching (`"timeout" in str(exc)`) evaluated to `False`. The gateway skipped automatic fallback and returned an empty error `ValueError("خطای Google Gemini (gemini-3.7-flash): ")`. Because the request was a 200 OK SSE stream, neither Render logs nor the browser Network tab registered an HTTP error.
+  - **Defensive Remediation**: Updated `_friendly_llm_error` with `isinstance(exc, httpx.TimeoutException)` and `type(exc).__name__` checks. Added automatic fallback to `gemini-3.6-flash` on timeout with adaptive timeouts (25s on attempt 0, 40s on retry). Switched default model across backend (`config.py`, `article_orchestrator.py`) and frontend (`ArticleGenerator.tsx`) to `gemini-3.6-flash`.
 - **2026-10-22 (Phase 3 Session Invalidation & Logout Security Completed)**:
   - **Instant Token Revocation via `token_version`**: Integrated `token_version` tracking in `User` model, embedding `"tv"` claim into JWT payloads and enforcing live verification in `deps.py:get_current_user`.
   - **Server-Side Invalidation on Logout**: Added `POST /api/v1/auth/logout` endpoint that increments `token_version`, immediately invalidating all outstanding JWT sessions on all devices.
