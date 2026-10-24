@@ -49,13 +49,13 @@ backend/app/main.py (Root Application Entrypoint)
 ├── app/schemas/ (Pydantic v2 Serialization & Request Contracts)
 │   ├── user.py (UserCreate, UserUpdate, UserResponse, Token)
 │   ├── article.py (GenerateRequest, ArticleResponse, ArticleListResponse, ArticleUpdate)
-│   ├── seo.py (ClusterRequest, ClusterResponse, TopicCluster)
+│   ├── seo.py (ClusterRequest, ClusterResponse, ClusterItem with suggested_h1, target_audience, resilient defaults)
 │   └── setting.py (SettingResponse, SettingUpdate)
 ├── app/services/ (Pure Business & Algorithmic Domain Logic)
 │   ├── article_orchestrator.py (Central generation orchestrator, state manager, streaming pipeline)
 │   │   ├── Dependencies: app/core/config.py, app/models/*, app/services/llm_gateway.py, app/services/seo_generator.py, app/services/web_researcher.py
 │   │   └── Consumers: app/api/v1/endpoints/articles.py
-│   ├── llm_gateway.py (Async HTTPX REST & SSE gateway to Google Gemini 3.8/3.7/3.6/3.5)
+│   ├── llm_gateway.py (Async HTTPX REST & SSE gateway to Google Gemini with provider-prefix stripping & automatic fallback)
 │   │   ├── Dependencies: app/core/config.py
 │   │   └── Consumers: app/services/article_orchestrator.py, app/services/seo_generator.py, app/services/seo_critic.py, app/api/v1/endpoints/seo.py
 │   ├── json_utils.py (Robust markdown/JSON extractor and parser)
@@ -74,7 +74,7 @@ backend/app/main.py (Root Application Entrypoint)
         ├── auth.py (POST /auth/login [10/min], GET /auth/me)
         ├── users.py (GET /users [paginated: skip, limit], POST, PUT, DELETE /users)
         ├── settings.py (GET, PUT /settings/{key})
-        ├── seo.py (POST /seo/cluster [Rate-Limited: dynamic_daily_limit])
+        ├── seo.py (POST /seo/cluster [_normalize_cluster_data, Rate-Limited: dynamic_daily_limit])
         └── articles.py (POST /articles/generate-stream, GET /articles [paginated: skip, limit], GET/PATCH/DELETE /articles/{id})
 ```
 
