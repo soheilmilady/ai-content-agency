@@ -101,10 +101,18 @@ function parseSseChunk(buffer: string): {
   return { events, remainder };
 }
 
-export default function ArticleGenerator({ initialKeyword = "", initialH2s = [] }: { initialKeyword?: string, initialH2s?: string[] }) {
-  const [topic, setTopic] = useState("");
+export default function ArticleGenerator({
+  initialKeyword = "",
+  initialTopic = "",
+  initialH2s = [],
+}: {
+  initialKeyword?: string;
+  initialTopic?: string;
+  initialH2s?: string[];
+}) {
+  const [topic, setTopic] = useState(initialTopic);
   const [keyword, setKeyword] = useState(initialKeyword);
-  const [h2s] = useState<string[]>(initialH2s);
+  const [h2s, setH2s] = useState<string[]>(initialH2s);
   const [selectedModel, setSelectedModel] = useState(AI_MODELS[0].value);
 
   const [generating, setGenerating] = useState(false);
@@ -329,14 +337,32 @@ export default function ArticleGenerator({ initialKeyword = "", initialH2s = [] 
 
             {h2s.length > 0 && (
               <div className="grid gap-2">
-                <Label>زیرعنوان‌های اجباری (H2)</Label>
+                <div className="flex items-center justify-between">
+                  <Label>زیرعنوان‌های ساختار مقاله (H2)</Label>
+                  <span className="text-xs text-muted-foreground">{h2s.length} زیرعنوان</span>
+                </div>
                 <div className="flex flex-wrap gap-2 mt-1 p-3 bg-muted/30 rounded-lg border border-border/50">
                   {h2s.map((h2, idx) => (
-                    <Badge key={idx} variant="secondary">{h2}</Badge>
+                    <Badge
+                      key={idx}
+                      variant="secondary"
+                      className="flex items-center gap-1.5 py-1 px-2.5 text-xs font-normal"
+                    >
+                      <span>{h2}</span>
+                      <button
+                        type="button"
+                        onClick={() => setH2s(h2s.filter((_, i) => i !== idx))}
+                        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-full w-4 h-4 flex items-center justify-center transition-colors mr-1"
+                        title="حذف این زیرعنوان"
+                        disabled={generating}
+                      >
+                        ×
+                      </button>
+                    </Badge>
                   ))}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  این زیرعنوان‌ها از طریق ابزار خوشه‌بندی اضافه شده‌اند و به اجبار در مقاله تولیدی استفاده خواهند شد.
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  این زیرعنوان‌ها بر اساس تحقیق کلمات کلیدی تنظیم شده‌اند و مستقیماً در استخوان‌بندی مقاله درج خواهند شد.
                 </p>
               </div>
             )}

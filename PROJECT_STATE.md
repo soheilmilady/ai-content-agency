@@ -74,6 +74,11 @@ An enterprise-grade autonomous AI Content Agency platform designed to conduct de
 
 ## 5. Milestone Changelog
 
+- **2026-10-24 (End-to-End Keyword Research & Content Brief Pipeline)**:
+  - **AnswerThePublic Smart Intent Tabs**: Implemented client-side regex categorization in `frontend/src/app/dashboard/keyword-research/page.tsx` segmenting scraped Google Autocomplete keywords into 4 real-time views: ❓ Questions & Guides, ⚖️ Comparisons, 💳 Commercial & Pricing, and 📋 All keywords with live count badges.
+  - **Full Content Brief Modal**: Created rich strategic brief dialog in `frontend/src/components/seo/TopicClusterCard.tsx` presenting Pillar keyword, Search Intent, Target Persona, Suggested H1, and ordered H2 structure before drafting.
+  - **End-to-End 1-Click Pipeline Connection**: Added `initialTopic` and mutable H2 management with item deletion in `frontend/src/components/dashboard/ArticleGenerator.tsx` and `app/dashboard/articles/new/page.tsx`. Transferred `topic`, `keyword`, and `h2s` from both cluster cards and table row buttons, eliminating empty required inputs.
+  - **Backend Schema & Prompt Upgrade**: Extended `ClusterItem` in `schemas/seo.py` and `endpoints/seo.py` with `suggested_h1` and `target_audience`.
 - **2026-10-24 (Sidebar Active State Navigation Fix)**:
   - Fixed duplicate active item highlighting in `frontend/src/app/dashboard/layout.tsx`. Navigating to `/dashboard/articles/new` ("تولید هوشمند") previously matched the prefix check `pathname.startsWith('/dashboard/articles/')` on the "لیست مقالات" item. Isolated `/dashboard/articles/new` from `/dashboard/articles` active matching.
 - **2026-10-24 (Production CORS & Seed Fix for Render/Vercel)**:

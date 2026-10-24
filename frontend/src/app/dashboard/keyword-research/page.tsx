@@ -44,6 +44,20 @@ const COUNTRIES = [
   { value: "sa", label: "عربستان 🇸🇦" },
 ];
 
+type IntentFilter = "all" | "questions" | "comparisons" | "commercial";
+
+const QUESTION_REGEX = /(چیست|چطور|چگونه|چرا|آیا|نحوه|طریقه|آموزش|راهنمای|مراحل|روش|علت|دلیل|کدام|what|how|why|when|where|which|who)/i;
+const COMPARISON_REGEX = /(تفاوت|فرق|مقایسه|یا|بهتر است|کدوم|در برابر|مزایا|معایب|vs|versus|difference|compare|comparison|better|or)/i;
+const COMMERCIAL_REGEX = /(قیمت|خرید|فروش|ارزان|سفارش|هزینه|نرخ|بهترین|تخفیف|تعرفه|فروشگاه|آنلاین|buy|price|cost|cheap|best|order|discount|shop|store)/i;
+
+function matchesIntent(keyword: string, intent: IntentFilter): boolean {
+  if (intent === "all") return true;
+  if (intent === "questions") return QUESTION_REGEX.test(keyword);
+  if (intent === "comparisons") return COMPARISON_REGEX.test(keyword);
+  if (intent === "commercial") return COMMERCIAL_REGEX.test(keyword);
+  return true;
+}
+
 export default function KeywordResearchPage() {
   const router = useRouter();
   const {
@@ -71,6 +85,7 @@ export default function KeywordResearchPage() {
   // ── UI State ──
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [filterText, setFilterText] = useState("");
+  const [intentFilter, setIntentFilter] = useState<IntentFilter>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 50;
   const [viewMode, setViewMode] = useState<"list" | "clusters">("list");
@@ -94,6 +109,7 @@ export default function KeywordResearchPage() {
   const handleStart = () => {
     if (!seed.trim()) return;
     setCurrentPage(1);
+    setIntentFilter("all");
     setClusterError("");
     const config: ScrapeConfig = {
       seed: seed.trim(),
@@ -126,10 +142,11 @@ export default function KeywordResearchPage() {
     );
   };
 
-  // ── Magic Bridge: Navigate to Article Generator with keyword ──
+  // ── Magic Bridge: Navigate to Article Generator with topic & keyword ──
   const handleGenerateArticle = (keyword: string) => {
+    const topic = `راهنمای جامع و صفر تا صد ${keyword}`;
     router.push(
-      `/dashboard/articles/new?keyword=${encodeURIComponent(keyword)}`,
+      `/dashboard/articles/new?topic=${encodeURIComponent(topic)}&keyword=${encodeURIComponent(keyword)}`,
     );
   };
 
@@ -162,10 +179,15 @@ export default function KeywordResearchPage() {
     }
   };
 
+  // ── Calculate Intent Counts (AnswerThePublic style) ──
+  const questionCount = results.filter((r) => QUESTION_REGEX.test(r.keyword)).length;
+  const comparisonCount = results.filter((r) => COMPARISON_REGEX.test(r.keyword)).length;
+  const commercialCount = results.filter((r) => COMMERCIAL_REGEX.test(r.keyword)).length;
+
   // ── Filter & Pagination ──
-  const filteredResults = filterText
-    ? results.filter((r) => r.keyword.includes(filterText.toLowerCase()))
-    : results;
+  const filteredResults = results
+    .filter((r) => matchesIntent(r.keyword, intentFilter))
+    .filter((r) => (filterText ? r.keyword.toLowerCase().includes(filterText.toLowerCase()) : true));
 
   const totalPages = Math.max(1, Math.ceil(filteredResults.length / PAGE_SIZE));
   const activePage = Math.min(currentPage, totalPages);
@@ -379,19 +401,96 @@ export default function KeywordResearchPage() {
                 )}
               </div>
             ) : (
-              <KeywordResultsTable
-                paginatedResults={paginatedResults}
-                translations={translations}
-                activePage={activePage}
-                pageSize={PAGE_SIZE}
-                totalPages={totalPages}
-                totalFilteredCount={filteredResults.length}
-                onPageChange={setCurrentPage}
-                onCopy={handleCopy}
-                copiedIndex={copiedIndex}
-                onOpenGoogle={handleOpenGoogle}
-                onGenerateArticle={handleGenerateArticle}
-              />
+              <div className="space-y-4">
+                {/* ═══════ AnswerThePublic-style Smart Intent Tabs ═══════ */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-border/30">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIntentFilter("all");
+                      setCurrentPage(1);
+                    }}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 ${
+                      intentFilter === "all"
+                        ? "bg-primary text-primary-foreground shadow-sm scale-[1.02]"
+                        : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                  >
+                    <span>📋 همه کلمات</span>
+                    <Badge variant="secondary" className="px-1.5 py-0 text-[10px] tabular-nums">
+                      {results.length.toLocaleString("fa-IR")}
+                    </Badge>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIntentFilter("questions");
+                      setCurrentPage(1);
+                    }}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 ${
+                      intentFilter === "questions"
+                        ? "bg-blue-600 text-white shadow-sm scale-[1.02]"
+                        : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                  >
+                    <span>❓ سوالات و راهنما</span>
+                    <Badge variant="secondary" className="px-1.5 py-0 text-[10px] tabular-nums">
+                      {questionCount.toLocaleString("fa-IR")}
+                    </Badge>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIntentFilter("comparisons");
+                      setCurrentPage(1);
+                    }}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 ${
+                      intentFilter === "comparisons"
+                        ? "bg-purple-600 text-white shadow-sm scale-[1.02]"
+                        : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                  >
+                    <span>⚖️ مقایسه و انتخاب</span>
+                    <Badge variant="secondary" className="px-1.5 py-0 text-[10px] tabular-nums">
+                      {comparisonCount.toLocaleString("fa-IR")}
+                    </Badge>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIntentFilter("commercial");
+                      setCurrentPage(1);
+                    }}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 ${
+                      intentFilter === "commercial"
+                        ? "bg-emerald-600 text-white shadow-sm scale-[1.02]"
+                        : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                  >
+                    <span>💳 خرید و قیمت</span>
+                    <Badge variant="secondary" className="px-1.5 py-0 text-[10px] tabular-nums">
+                      {commercialCount.toLocaleString("fa-IR")}
+                    </Badge>
+                  </button>
+                </div>
+
+                <KeywordResultsTable
+                  paginatedResults={paginatedResults}
+                  translations={translations}
+                  activePage={activePage}
+                  pageSize={PAGE_SIZE}
+                  totalPages={totalPages}
+                  totalFilteredCount={filteredResults.length}
+                  onPageChange={setCurrentPage}
+                  onCopy={handleCopy}
+                  copiedIndex={copiedIndex}
+                  onOpenGoogle={handleOpenGoogle}
+                  onGenerateArticle={handleGenerateArticle}
+                />
+              </div>
             )}
           </CardContent>
         </Card>
